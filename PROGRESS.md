@@ -275,3 +275,9 @@ Living status of the backend build. Updated each phase.
 - [x] **Vercel:** `api/index.js` hands over to `src/serverless.ts` (compiled by `nest build`); `vercel.json` serves `public/` statically, sends `/api/*` to the function, adds security headers; `npm run vercel-build` = build → migrate → setup.
 - [x] **CLAUDE.md** hand-over for Claude Code.
 - [x] **Tests** — 71 unit + 141 e2e green on a migration-built database.
+
+## ✅ Completed — Hand-over to Claude Code and live-password check — 8 Oct 2026
+
+- [x] **Hand-over checked.** Build 14 moved to `C:\Users\karim\Projects\laliga-backend` and put under git (first commit = build 14 as delivered; `.env` and `laliga-mail.env` ignored). Re-verified on a fresh PostgreSQL 16: `npm ci`, build, migrate, both seeds, `db:migration:check` clean, 71 unit + 141 e2e green.
+- [x] **Live mode refuses the demo passwords.** `LaLiga@2026!` (exactly 12 characters) passed the old length-only rule, and it is written in `docker-compose.yml` and `.env.example`, which go to GitHub. With `LALIGA_LIVE=true` the seed now refuses `SEED_OWNER_PASSWORD` if it is under 12 characters or one of the repo's demo passwords (`src/config/live-passwords.ts`). The same rule now applies to `SEED_ADMIN_PASSWORD` if someone sets `SEED_ADMIN_EMAIL` on the live system (before, it fell back to `Admin@12345`).
+- [x] **Tests** — 74 unit (3 new) green; the live seed was checked against a scratch database: demo owner password refused, admin email without a password refused, a proper password accepted.

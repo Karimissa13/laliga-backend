@@ -7,6 +7,7 @@ import {
   AgeGroup, Location, Permission, Role, Season, Term, User, ProgramType,
 } from './entities';
 import { allPermissionKeys, DEFAULT_ROLES, MODULE_ACTIONS } from '../rbac/permissions.catalog';
+import { livePasswordProblem } from '../config/live-passwords';
 
 dotenv.config();
 
@@ -69,6 +70,10 @@ async function run() {
   if (LIVE && !process.env.SEED_ADMIN_EMAIL) {
     console.log('  live system: no generic admin account');
   } else if (!admin) {
+    const adminProblem = LIVE ? livePasswordProblem(process.env.SEED_ADMIN_PASSWORD) : null;
+    if (adminProblem) {
+      throw new Error(`Live setup: SEED_ADMIN_PASSWORD ${adminProblem}. Set a new one in the hosting settings, or remove SEED_ADMIN_EMAIL.`);
+    }
     admin = userRepo.create({
       fullName: 'Academy Administrator',
       email: adminEmail,
@@ -84,8 +89,9 @@ async function run() {
   if (!(await userRepo.findOne({ where: { email: ownerEmail } }))) {
     // On the live system the first password is the one Karim types into the
     // host's settings (never a default written in the code).
-    if (LIVE && (process.env.SEED_OWNER_PASSWORD || '').length < 12) {
-      throw new Error('Live setup: set SEED_OWNER_PASSWORD (at least 12 characters) in the hosting settings before the first deploy.');
+    const ownerProblem = LIVE ? livePasswordProblem(process.env.SEED_OWNER_PASSWORD) : null;
+    if (ownerProblem) {
+      throw new Error(`Live setup: SEED_OWNER_PASSWORD ${ownerProblem}. Set it in the hosting settings before the first deploy.`);
     }
     await userRepo.save(userRepo.create({
       fullName: process.env.SEED_OWNER_NAME || 'Karim Issa',
