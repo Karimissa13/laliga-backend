@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LaLiga Academy — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login">
+  <div class="box">
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px">
+      <div style="width:32px;height:32px;border-radius:8px;background:var(--coral);display:grid;place-items:center;color:#fff;font-family:Archivo;font-weight:800;transform:skewX(-8deg)"><span style="transform:skewX(8deg)">L</span></div>
+      <div><h1>LaLiga Academy</h1><p style="margin:0;font-size:12px;color:var(--muted)">Operations backend</p></div>
+    </div>
+    <p>Sign in to the administration system.</p>
+    <div class="fld"><label>Email</label><input id="li-email" type="email" placeholder="you@example.com" autocomplete="username"></div>
+    <div class="fld"><label>Password</label><input id="li-pass" type="password" autocomplete="current-password"></div>
+    <button class="btn" id="li-go" style="width:100%;margin-top:6px">Sign in</button>
+    <div class="err" id="li-err"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <aside>
+    <div class="brand">
+      <div class="mk"><span>L</span></div>
+      <div><b>LaLiga Academy</b><small>Abu Dhabi</small></div>
+    </div>
+    <nav id="nav"></nav>
+    <div class="who"><b id="who-name">—</b><span id="who-role">—</span> · <a data-act="myPassword" style="cursor:pointer">Password</a> · <a id="logout" style="cursor:pointer">Sign out</a></div>
+  </aside>
+  <main>
+    <div class="top"><h2 id="page-title">Dashboard</h2><div class="acts" id="page-acts"></div></div>
+    <div class="content" id="view"><div class="loading">Loading…</div></div>
+  </main>
+</div>
+
+<div id="drawer"><div class="panel"><div class="dh"><h3 id="dw-title">Detail</h3><button class="close" data-act="closeDrawer">×</button></div><div class="db" id="dw-body"></div></div></div>
+<div class="toast" id="toast"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,838 @@
+// ============================================================================
+// LaLiga Academy Abu Dhabi — Operations Backend
+// Prisma schema — full normalized domain model
+// History is preserved: enrolments, invoices, payments, evaluations and audit
+// logs are append/immutable records; changing a player's team/season/coach
+// never destroys prior data.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// ENUMS
+// ---------------------------------------------------------------------------
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum PlayerStatus {
+  TRIAL
+  WAITLISTED
+  REGISTERED
+  ACTIVE
+  INACTIVE
+  WITHDRAWN
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  TRIAL_BOOKED
+  TRIAL_ATTENDED
+  OFFER_MADE
+  REGISTERED
+  LOST
+}
+
+enum LeadSource {
+  POPUP
+  ENQUIRY
+  WEBSITE
+  REFERRAL
+  SOCIAL_MEDIA
+  SCHOOL
+  EMAIL_SMS
+  TV_RADIO
+  OTHER
+}
+
+enum ProgramType {
+  TERM
+  CAMP
+  EVENT
+  LEAGUE
+}
+
+enum EnrolmentStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  TRANSFERRED
+}
+
+enum InvoiceType {
+  STANDARD
+  LEAGUE
+  CAMP
+  ADDITIONAL
+  CUSTOM
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PART_PAID
+  PAID
+  REFUNDED
+  WRITTEN_OFF
+  CANCELLED
+  SPONSORED
+}
+
+enum PaymentMethod {
+  CASH
+  CHEQUE
+  CARD
+  BANK_TRANSFER
+  ONLINE
+  WALLET
+}
+
+enum PaymentDirection {
+  INBOUND // payment received
+  REFUND // money returned
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum DiscountKind {
+  PERCENTAGE
+  FIXED
+}
+
+enum DiscountRule {
+  MANUAL
+  SIBLING
+  RETURNING
+  EARLY_BIRD
+  PROMO
+  SPONSOR
+}
+
+enum DocumentType {
+  PHOTO
+  MEDICAL_INSURANCE
+  EMIRATES_ID_FRONT
+  EMIRATES_ID_BACK
+  BIRTH_CERTIFICATE
+  PASSPORT
+  CONSENT_FORM
+  OTHER
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  EXCUSED
+  LATE
+}
+
+enum SessionType {
+  TRAINING
+  MATCH
+  TRIAL
+  CAMP
+  EVENT
+}
+
+enum CommunicationChannel {
+  EMAIL
+  SMS
+  WHATSAPP
+  PUSH
+}
+
+enum CommunicationStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+}
+
+enum WalletTxnType {
+  CREDIT
+  DEBIT
+}
+
+// ---------------------------------------------------------------------------
+// AUTH · RBAC · AUDIT
+// ---------------------------------------------------------------------------
+
+/// Staff user (admins, finance, ops, coaches). Parents authenticate via Guardian.
+model User {
+  id            String    @id @default(uuid())
+  fullName      String
+  email         String    @unique
+  mobile        String?
+  passwordHash  String
+  isActive      Boolean   @default(true)
+  twoFactorSecret String? // reserved for TOTP 2FA (Phase: security)
+  twoFactorEnabled Boolean @default(false)
+  lastLoginAt   DateTime?
+  roleId        String
+  role          Role      @relation(fields: [roleId], references: [id])
+  coach         Coach?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  auditLogs     AuditLog[]      @relation("ActorLogs")
+  refreshTokens RefreshToken[]
+  comments      PlayerComment[]
+  evaluations   Evaluation[]    @relation("EvaluatorEvaluations")
+
+  @@index([roleId])
+  @@map("users")
+}
+
+model Role {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  slug        String           @unique
+  description String?
+  isSystem    Boolean          @default(false) // system roles cannot be deleted
+  users       User[]
+  permissions RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("roles")
+}
+
+/// Permission expressed as module.action, e.g. "invoice.refund", "player.create"
+model Permission {
+  id          String           @id @default(uuid())
+  key         String           @unique // module.action
+  module      String
+  action      String
+  description String?
+  roles       RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+/// Immutable activity log for sensitive & write actions (impersonation, refunds, deletes...)
+model AuditLog {
+  id          String   @id @default(uuid())
+  actorId     String?
+  actor       User?    @relation("ActorLogs", fields: [actorId], references: [id])
+  actorType   String   @default("user") // user | guardian | system
+  action      String   // e.g. player.create, invoice.refund, auth.login, guardian.impersonate
+  entity      String?  // entity name
+  entityId    String?
+  ipAddress   String?
+  userAgent   String?
+  metadata    Json?    // before/after, amounts, reasons
+  createdAt   DateTime @default(now())
+
+  @@index([actorId])
+  @@index([entity, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// PEOPLE · Guardians, Players, Coaches
+// ---------------------------------------------------------------------------
+
+/// Parent/guardian — the account root. One guardian → many players (siblings).
+model Guardian {
+  id             String    @id @default(uuid())
+  reference      String    @unique // PR-000001
+  fullName       String
+  relationship   String?   // Father, Mother, Guardian...
+  email          String    @unique
+  secondaryEmail String?
+  mobile         String
+  passwordHash   String?   // parent portal login (nullable until activated)
+  emirate        String?
+  city           String?
+  howHeard       LeadSource?
+  marketingConsent Boolean @default(false)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  players        Player[]
+  wallet         Wallet?
+  invoices       Invoice[]
+  documents      Document[]
+  communications Communication[]
+
+  @@index([mobile])
+  @@map("guardians")
+}
+
+/// Player — belongs to a guardian; siblings share a guardian.
+model Player {
+  id                  String       @id @default(uuid())
+  reference           String       @unique // PL-000001
+  guardianId          String
+  guardian            Guardian     @relation(fields: [guardianId], references: [id])
+  firstName           String
+  lastName            String
+  gender              Gender
+  dateOfBirth         DateTime
+  email               String?
+  mobile              String?
+  status              PlayerStatus @default(TRIAL)
+  ageGroupId          String?
+  ageGroup            AgeGroup?    @relation(fields: [ageGroupId], references: [id])
+  ageGroupOverride    Boolean      @default(false) // manual override of derived age group
+  currentTeamId       String?
+  currentTeam         Team?        @relation("PlayerCurrentTeam", fields: [currentTeamId], references: [id])
+  kitSize             String?
+  previousAcademy     String?
+  // Emergency & medical (net-new vs legacy which only had an insurance file)
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  medicalNotes        String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  enrolments          Enrolment[]
+  attendances         Attendance[]
+  evaluations         Evaluation[]
+  documents           Document[]
+  comments            PlayerComment[]
+  invoiceLines        InvoiceLineItem[]
+  lead                Lead?
+
+  @@index([guardianId])
+  @@index([status])
+  @@index([ageGroupId])
+  @@index([currentTeamId])
+  @@map("players")
+}
+
+model PlayerComment {
+  id        String   @id @default(uuid())
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  authorId  String?
+  author    User?    @relation(fields: [authorId], references: [id])
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([playerId])
+  @@map("player_comments")
+}
+
+/// Coach profile attached to a staff User.
+model Coach {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  certification String?  // e.g. UEFA A Pro
+  bio           String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  teams         Team[]        @relation("TeamHeadCoach")
+  sessions      Session[]
+  evaluations   Evaluation[]  @relation("CoachEvaluations")
+
+  @@map("coaches")
+}
+
+// ---------------------------------------------------------------------------
+// STRUCTURE · Seasons, Terms, Locations, Venues, Age Groups, Teams
+// ---------------------------------------------------------------------------
+
+model Season {
+  id        String   @id @default(uuid())
+  name      String   @unique // Season 10
+  startDate DateTime?
+  endDate   DateTime?
+  cutoffDate DateTime? // age-group birth-year cutoff for this season
+  isActive  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  terms     Term[]
+  teams     Team[]
+  enrolments Enrolment[]
+
+  @@map("seasons")
+}
+
+/// A programme block. type separates Term / Camp / Event / League (legacy overloaded "term").
+model Term {
+  id        String      @id @default(uuid())
+  seasonId  String
+  season    Season      @relation(fields: [seasonId], references: [id])
+  name      String
+  type      ProgramType @default(TERM)
+  startDate DateTime?
+  endDate   DateTime?
+  weeks     Int?
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  fees        Fee[]
+  enrolments  Enrolment[]
+  sessions    Session[]
+  evaluations Evaluation[]
+
+  @@index([seasonId])
+  @@map("terms")
+}
+
+model Location {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  emirate   String   @default("Abu Dhabi")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  venues    Venue[]
+  teams     Team[]
+  fees      Fee[]
+  sessions  Session[]
+
+  @@map("locations")
+}
+
+model Venue {
+  id         String   @id @default(uuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  name       String   // pitch / dome / field name
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  sessions   Session[]
+
+  @@index([locationId])
+  @@map("venues")
+}
+
+/// Age group defined by birth-year window; players auto-assigned from DOB + season cutoff.
+model AgeGroup {
+  id          String   @id @default(uuid())
+  name        String   @unique // U-9, U-12 ...
+  code        String   @unique // U9
+  minBirthYear Int?
+  maxBirthYear Int?
+  level       String?  // Development / Advanced / HPC
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  teams       Team[]
+  players     Player[]
+  fees        Fee[]
+
+  @@map("age_groups")
+}
+
+/// Team as a real entity: capacity, age group, season, head coach, roster (via enrolments).
+model Team {
+  id          String   @id @default(uuid())
+  name        String
+  seasonId    String?
+  season      Season?  @relation(fields: [seasonId], references: [id])
+  ageGroupId  String?
+  ageGroup    AgeGroup? @relation(fields: [ageGroupId], references: [id])
+  locationId  String?
+  location    Location? @relation(fields: [locationId], references: [id])
+  headCoachId String?
+  headCoach   Coach?   @relation("TeamHeadCoach", fields: [headCoachId], references: [id])
+  capacity    Int      @default(20)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  enrolments  Enrolment[]
+  sessions    Session[]
+  currentPlayers Player[] @relation("PlayerCurrentTeam")
+
+  @@index([seasonId])
+  @@index([ageGroupId])
+  @@map("teams")
+}
+
+// ---------------------------------------------------------------------------
+// REGISTRATION · Leads/Trials, Enrolments
+// ---------------------------------------------------------------------------
+
+/// Merged lead/trial pipeline (legacy Popup Signups + Enquiries, one sign_ups table).
+model Lead {
+  id             String     @id @default(uuid())
+  reference      String     @unique // TR-000001
+  guardianName   String
+  guardianEmail  String
+  guardianMobile String
+  playerName     String
+  playerDob      DateTime?
+  ageGroupLabel  String?
+  level          String?
+  source         LeadSource @default(ENQUIRY)
+  status         LeadStatus @default(NEW)
+  trialDate      DateTime?
+  venueLabel     String?
+  interested     Boolean    @default(true)
+  assignedToId   String?    // staff member following up
+  notes          String?
+  // linkage once converted
+  playerId       String?    @unique
+  player         Player?    @relation(fields: [playerId], references: [id])
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([status])
+  @@index([source])
+  @@map("leads")
+}
+
+/// A player's participation in a term/team — the history record. Immutable per period.
+model Enrolment {
+  id         String          @id @default(uuid())
+  playerId   String
+  player     Player          @relation(fields: [playerId], references: [id])
+  seasonId   String
+  season     Season          @relation(fields: [seasonId], references: [id])
+  termId     String
+  term       Term            @relation(fields: [termId], references: [id])
+  teamId     String?
+  team       Team?           @relation(fields: [teamId], references: [id])
+  status     EnrolmentStatus @default(PENDING)
+  enrolledAt DateTime        @default(now())
+  endedAt    DateTime?
+  invoiceId  String?
+  invoice    Invoice?        @relation(fields: [invoiceId], references: [id])
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@index([playerId])
+  @@index([seasonId])
+  @@index([termId])
+  @@index([teamId])
+  @@map("enrolments")
+}
+
+// ---------------------------------------------------------------------------
+// SCHEDULING · Sessions & Attendance
+// ---------------------------------------------------------------------------
+
+model Session {
+  id         String      @id @default(uuid())
+  title      String?
+  type       SessionType @default(TRAINING)
+  termId     String?
+  term       Term?       @relation(fields: [termId], references: [id])
+  teamId     String?
+  team       Team?       @relation(fields: [teamId], references: [id])
+  locationId String?
+  location   Location?   @relation(fields: [locationId], references: [id])
+  venueId    String?
+  venue      Venue?      @relation(fields: [venueId], references: [id])
+  coachId    String?
+  coach      Coach?      @relation(fields: [coachId], references: [id])
+  startsAt   DateTime
+  endsAt     DateTime
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  attendances Attendance[]
+
+  @@index([teamId])
+  @@index([startsAt])
+  @@map("sessions")
+}
+
+model Attendance {
+  id        String           @id @default(uuid())
+  sessionId String
+  session   Session          @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  playerId  String
+  player    Player           @relation(fields: [playerId], references: [id])
+  status    AttendanceStatus @default(PRESENT)
+  reason    String?
+  comment   String?
+  recordedAt DateTime        @default(now())
+
+  @@unique([sessionId, playerId])
+  @@index([playerId])
+  @@map("attendances")
+}
+
+// ---------------------------------------------------------------------------
+// FINANCE · Fees, Invoices, Line items, Payments, Discounts, Wallet
+// ---------------------------------------------------------------------------
+
+/// Price catalog keyed by term × age group × location (+ level).
+model Fee {
+  id         String      @id @default(uuid())
+  termId     String
+  term       Term        @relation(fields: [termId], references: [id])
+  ageGroupId String?
+  ageGroup   AgeGroup?   @relation(fields: [ageGroupId], references: [id])
+  locationId String?
+  location   Location?   @relation(fields: [locationId], references: [id])
+  level      String?
+  amount     Decimal     @db.Decimal(10, 2) // excl VAT
+  vatRate    Decimal     @default(5.0) @db.Decimal(5, 2)
+  programType ProgramType @default(TERM)
+  isActive   Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@index([termId])
+  @@map("fees")
+}
+
+model Invoice {
+  id            String        @id @default(uuid())
+  number        String        @unique // LA-1712
+  guardianId    String
+  guardian      Guardian      @relation(fields: [guardianId], references: [id])
+  type          InvoiceType   @default(STANDARD)
+  status        InvoiceStatus @default(DRAFT) // computed from ledger, persisted for query
+  issueDate     DateTime?
+  dueDate       DateTime?
+  subtotal      Decimal       @default(0) @db.Decimal(10, 2) // excl VAT, after discount
+  discountTotal Decimal       @default(0) @db.Decimal(10, 2)
+  vatTotal      Decimal       @default(0) @db.Decimal(10, 2)
+  total         Decimal       @default(0) @db.Decimal(10, 2) // incl VAT
+  amountPaid    Decimal       @default(0) @db.Decimal(10, 2)
+  amountRefunded Decimal      @default(0) @db.Decimal(10, 2)
+  writeOffAmount Decimal      @default(0) @db.Decimal(10, 2)
+  writeOffReason String?
+  isSponsored   Boolean       @default(false)
+  installments  Int           @default(1)
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  lineItems     InvoiceLineItem[]
+  payments      Payment[]
+  discounts     AppliedDiscount[]
+  enrolments    Enrolment[]
+
+  @@index([guardianId])
+  @@index([status])
+  @@map("invoices")
+}
+
+model InvoiceLineItem {
+  id          String   @id @default(uuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  playerId    String?
+  player      Player?  @relation(fields: [playerId], references: [id])
+  description String
+  quantity    Int      @default(1)
+  unitAmount  Decimal  @db.Decimal(10, 2) // excl VAT
+  vatRate     Decimal  @default(5.0) @db.Decimal(5, 2)
+  lineTotal   Decimal  @db.Decimal(10, 2) // excl VAT
+  createdAt   DateTime @default(now())
+
+  @@index([invoiceId])
+  @@map("invoice_line_items")
+}
+
+/// Payments ledger — invoice status is derived from the sum of these.
+model Payment {
+  id          String           @id @default(uuid())
+  invoiceId   String
+  invoice     Invoice          @relation(fields: [invoiceId], references: [id])
+  direction   PaymentDirection @default(INBOUND)
+  amount      Decimal          @db.Decimal(10, 2) // incl VAT
+  method      PaymentMethod
+  status      PaymentStatus    @default(COMPLETED)
+  reference   String?          // gateway ref / cheque no
+  gatewayId   String?          // external payment id (Phase: payments)
+  paidAt      DateTime         @default(now())
+  recordedById String?
+  notes       String?
+  createdAt   DateTime         @default(now())
+
+  @@index([invoiceId])
+  @@index([status])
+  @@map("payments")
+}
+
+/// Discount definitions (with rule type for the automation engine).
+model Discount {
+  id        String       @id @default(uuid())
+  name      String
+  kind      DiscountKind @default(PERCENTAGE)
+  value     Decimal      @db.Decimal(10, 2)
+  rule      DiscountRule @default(MANUAL)
+  // rule params (e.g. early-bird cutoff date, min siblings) live here
+  params    Json?
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  applied   AppliedDiscount[]
+
+  @@map("discounts")
+}
+
+model AppliedDiscount {
+  id         String   @id @default(uuid())
+  invoiceId  String
+  invoice    Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  discountId String?
+  discount   Discount? @relation(fields: [discountId], references: [id])
+  label      String
+  rule       DiscountRule @default(MANUAL)
+  amount     Decimal  @db.Decimal(10, 2) // resolved discount amount
+  createdAt  DateTime @default(now())
+
+  @@index([invoiceId])
+  @@map("applied_discounts")
+}
+
+/// Parent wallet — credits, refunds, overpayments.
+model Wallet {
+  id         String   @id @default(uuid())
+  guardianId String   @unique
+  guardian   Guardian @relation(fields: [guardianId], references: [id])
+  balance    Decimal  @default(0) @db.Decimal(10, 2)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  transactions WalletTransaction[]
+
+  @@map("wallets")
+}
+
+model WalletTransaction {
+  id        String        @id @default(uuid())
+  walletId  String
+  wallet    Wallet        @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  type      WalletTxnType
+  amount    Decimal       @db.Decimal(10, 2)
+  reason    String?
+  createdAt DateTime      @default(now())
+
+  @@index([walletId])
+  @@map("wallet_transactions")
+}
+
+// ---------------------------------------------------------------------------
+// DEVELOPMENT · Evaluations (surfaced Player Passport)
+// ---------------------------------------------------------------------------
+
+model Evaluation {
+  id           String   @id @default(uuid())
+  playerId     String
+  player       Player   @relation(fields: [playerId], references: [id])
+  termId       String?
+  term         Term?    @relation(fields: [termId], references: [id])
+  coachId      String?
+  coach        Coach?   @relation("CoachEvaluations", fields: [coachId], references: [id])
+  evaluatorId  String?
+  evaluator    User?    @relation("EvaluatorEvaluations", fields: [evaluatorId], references: [id])
+  isCustom     Boolean  @default(false)
+  scores       Json?    // { technical: 4, tactical: 3, physical: 4, social: 5 }
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  @@index([playerId])
+  @@map("evaluations")
+}
+
+// ---------------------------------------------------------------------------
+// DOCUMENTS & COMMUNICATIONS
+// ---------------------------------------------------------------------------
+
+model Document {
+  id         String       @id @default(uuid())
+  type       DocumentType
+  fileName   String
+  storageKey String       // object-storage key
+  mimeType   String?
+  sizeBytes  Int?
+  expiresAt  DateTime?    // insurance / Emirates ID expiry
+  // polymorphic-ish: attached to a player and/or guardian
+  playerId   String?
+  player     Player?      @relation(fields: [playerId], references: [id])
+  guardianId String?
+  guardian   Guardian?    @relation(fields: [guardianId], references: [id])
+  uploadedById String?
+  createdAt  DateTime     @default(now())
+
+  @@index([playerId])
+  @@index([guardianId])
+  @@index([type])
+  @@map("documents")
+}
+
+model CommunicationTemplate {
+  id        String               @id @default(uuid())
+  name      String               @unique
+  channel   CommunicationChannel
+  subject   String?
+  body      String
+  isActive  Boolean              @default(true)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  communications Communication[]
+
+  @@map("communication_templates")
+}
+
+model Communication {
+  id         String               @id @default(uuid())
+  channel    CommunicationChannel
+  status     CommunicationStatus  @default(QUEUED)
+  templateId String?
+  template   CommunicationTemplate? @relation(fields: [templateId], references: [id])
+  guardianId String?
+  guardian   Guardian?            @relation(fields: [guardianId], references: [id])
+  toAddress  String
+  subject    String?
+  body       String
+  sentAt     DateTime?
+  error      String?
+  createdAt  DateTime             @default(now())
+
+  @@index([guardianId])
+  @@index([status])
+  @@map("communications")
+}

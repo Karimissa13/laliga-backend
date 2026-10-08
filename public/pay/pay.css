@@ -1,0 +1,9 @@
+.payamt{font-family:"Archivo",system-ui,sans-serif;font-size:32px;font-weight:800;letter-spacing:-.6px;margin:6px 0 2px}
+.paykv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13.5px;margin:14px 0}
+.paykv dt{color:var(--muted)}
+.paykv dd{margin:0;font-weight:500;word-break:break-word}
+.paybank{background:var(--surface-2);border-radius:10px;padding:12px 14px;margin-top:14px}
+.paybank .mono{font-family:"IBM Plex Mono",monospace}
+.paystate{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600}
+.paystate.ok{background:var(--good-wash);color:var(--good)}
+.paystate.bad{background:var(--bad-wash);color:var(--bad)}

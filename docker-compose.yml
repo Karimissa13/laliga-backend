@@ -1,0 +1,51 @@
+# One command to run the whole system:
+#   docker compose up
+# Then open http://localhost:3000  (admin UI)  ·  /api/docs (API explorer)
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: laliga
+      POSTGRES_PASSWORD: laliga
+      POSTGRES_DB: laliga
+    ports:
+      - "5433:5432"          # host 5433 to avoid clashing with a local Postgres
+    volumes:
+      - laliga_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U laliga -d laliga"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://laliga:laliga@db:5432/laliga
+      DB_SYNCHRONIZE: "true"
+      JWT_ACCESS_SECRET: change-me-in-production-access
+      JWT_REFRESH_SECRET: change-me-in-production-refresh
+      SEED_ADMIN_EMAIL: admin@laligaacademy.local
+      SEED_ADMIN_PASSWORD: Admin@12345
+      # Karim's named super-admin account (change the password after first sign-in)
+      SEED_OWNER_EMAIL: karim@inspirat.us
+      SEED_OWNER_NAME: Karim Issa
+      SEED_OWNER_PASSWORD: LaLiga@2026!
+      # Link in the parents' welcome email (change when the portal has a real address)
+      PORTAL_URL: http://localhost:3000/parent/
+    # Email mailbox details (MAIL_HOST, MAIL_PORT, MAIL_USER, MAIL_PASS, MAIL_FROM).
+    # Kept OUTSIDE this folder, next to START-LALIGA.bat, so updates never erase it.
+    # Without it, emails are recorded in the Email log but not sent.
+    env_file:
+      - path: ../laliga-mail.env
+        required: false
+    ports:
+      - "3000:3000"
+
+volumes:
+  laliga_pgdata:

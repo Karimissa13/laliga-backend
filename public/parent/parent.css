@@ -1,0 +1,13 @@
+.pbar{background:#2b2826;color:#fff;display:flex;justify-content:space-between;align-items:center;padding:14px 22px}
+.pbrand{font-family:"Archivo",system-ui,sans-serif;font-weight:500;font-size:18px;letter-spacing:.3px}
+.pbrand .r{color:#ff4d6d;font-weight:800}
+.pbrand small{display:block;font-size:10px;font-weight:800;letter-spacing:2px;color:#ff4d6d}
+.pwrap{max-width:860px;margin:0 auto;padding:26px 18px 60px}
+.pcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:24px}
+.pcard.narrow{max-width:420px;margin:40px auto}
+.pcard h1{font-size:21px;font-weight:800;letter-spacing:-.4px;margin-bottom:6px}
+.pcard p{color:var(--muted);font-size:13.5px;margin:0 0 18px}
+.kids{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));margin:12px 0 22px}
+.kid{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--surface)}
+.kid b{font-family:"Archivo",system-ui,sans-serif;font-size:15px}
+.ph2{font-size:15px;font-weight:800;margin:6px 0 10px}

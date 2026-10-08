@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+coverage/
+*.log
+.vercel
+laliga-mail.env
+*.pem
