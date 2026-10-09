@@ -27,8 +27,8 @@ export function pastedSettingProblems(env: NodeJS.ProcessEnv = process.env): str
     const v = env[key];
     if (!v) continue;
     if (v !== v.trim()) out.push(`${key}: starts or ends with a space or line break`);
-    else if (/^(['"]).*\1$/s.test(v)) out.push(`${key}: the value is wrapped in quotes`);
-    else if (v.startsWith(`${key}=`)) out.push(`${key}: the value starts with "${key}=" (paste only what comes after the =)`);
+    else if (/^(['"`]).*\1$/s.test(v)) out.push(`${key}: the value is wrapped in quotes or backticks`);
+    else if (new RegExp(`^${key}\\s*[=:]`).test(v)) out.push(`${key}: the value starts with "${key}=" (paste only what comes after the =)`);
   }
   return out;
 }

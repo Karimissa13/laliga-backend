@@ -6,8 +6,14 @@ function liveSecretsCheck() {
   assertVercelLiveMode();
   if (process.env.LALIGA_LIVE !== 'true') return;
   const a = process.env.JWT_ACCESS_SECRET || '', r = process.env.JWT_REFRESH_SECRET || '';
-  if (a.length < 32 || r.length < 32 || a === r) {
-    throw new Error('Live system: set JWT_ACCESS_SECRET and JWT_REFRESH_SECRET to two different random values of at least 32 characters.');
+  // Say which rule failed (lengths only, never the values) so the setting can be fixed first time.
+  const why = [
+    a.length < 32 && `JWT_ACCESS_SECRET has ${a.length} characters`,
+    r.length < 32 && `JWT_REFRESH_SECRET has ${r.length} characters`,
+    a && a === r && 'the two secrets are identical',
+  ].filter(Boolean);
+  if (why.length) {
+    throw new Error(`Live system: set JWT_ACCESS_SECRET and JWT_REFRESH_SECRET to two different random values of at least 32 characters (${why.join('; ')}).`);
   }
 }
 

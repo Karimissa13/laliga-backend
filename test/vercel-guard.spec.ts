@@ -20,6 +20,14 @@ describe('pastedSettingProblems', () => {
     expect(about('JWT_ACCESS_SECRET')).toMatch(/JWT_ACCESS_SECRET=/);
   });
 
+  it('catches backticks from copied code and "KEY = value" lines from a terminal', () => {
+    const problems = pastedSettingProblems({ LALIGA_LIVE: '`true`', JWT_REFRESH_SECRET: 'JWT_REFRESH_SECRET = abc' } as any);
+    expect(problems).toEqual([
+      'LALIGA_LIVE: the value is wrapped in quotes or backticks',
+      'JWT_REFRESH_SECRET: the value starts with "JWT_REFRESH_SECRET=" (paste only what comes after the =)',
+    ]);
+  });
+
   it('stops a Vercel build on a paste mistake before anything else', () => {
     expect(() => assertVercelLiveMode({ VERCEL: '1', LALIGA_LIVE: 'true ' } as any)).toThrow(/LALIGA_LIVE: starts or ends/);
     expect(() => assertVercelLiveMode({ VERCEL: '1', LALIGA_LIVE: 'true' } as any)).not.toThrow();
