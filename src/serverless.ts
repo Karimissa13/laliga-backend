@@ -14,6 +14,7 @@ import express, { json, urlencoded } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
+import { corsOrigin, stripRewritePathParam } from './common/vercel-request';
 
 let cached: express.Express | null = null;
 
@@ -40,9 +41,8 @@ async function bootstrap(): Promise<express.Express> {
     },
     crossOriginEmbedderPolicy: false,
   }));
-  // Only the academy's own sites may call the API from a browser.
-  const allowed = (process.env.CORS_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
-  app.enableCors({ origin: allowed.length ? allowed : true, credentials: true });
+  // Only the academy's own sites may call the API from a browser (see corsOrigin).
+  app.enableCors({ origin: corsOrigin(), credentials: true });
   // Room for a player's photo on the Advanced report (resized in the browser first).
   app.use(json({ limit: '1mb' }));
   app.use(urlencoded({ extended: true, limit: '1mb' }));
@@ -60,5 +60,6 @@ async function bootstrap(): Promise<express.Express> {
 
 export default async function handler(req: any, res: any) {
   const server = await bootstrap();
+  if (typeof req.url === 'string') req.url = stripRewritePathParam(req.url);
   return server(req, res);
 }
