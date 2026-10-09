@@ -8,3 +8,4 @@ coverage/
 laliga-mail.env
 *.pem
 .env.local
+.claude/launch.json

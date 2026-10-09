@@ -1,14 +1,17 @@
 {
-  "version": "0.0.1",
-  "configurations": [
-    {
-      "name": "start",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": [
-        "run",
-        "start"
-      ],
-      "port": 3000
-    }
-  ]
+    "version":  "0.0.1",
+    "configurations":  [
+                           {
+                               "port":  3100,
+                               "runtimeExecutable":  "powershell",
+                               "name":  "laliga-local-review",
+                               "runtimeArgs":  [
+                                                   "-NoProfile",
+                                                   "-ExecutionPolicy",
+                                                   "Bypass",
+                                                   "-File",
+                                                   "C:\\Users\\karim\\AppData\\Local\\Temp\\claude\\C--Users-karim-Projects-laliga-backend\\f866e70a-6885-43dc-a4dd-63609475ced5\\scratchpad\\run-local.ps1"
+                                               ]
+                           }
+                       ]
 }

@@ -2665,8 +2665,10 @@ VIEWS.development = async () => {
 };
 let DROWS = [];
 async function loadDevBoard() {
-  for (const k of ['termId', 'teamId', 'type', 'status', 'search']) { const el = $('dv-' + k); if (el) DV[k] = el.value.trim(); }
-  const qs = new URLSearchParams(Object.entries(DV).filter(([, v]) => v));
+  const FILTERS = ['termId', 'teamId', 'type', 'status', 'search'];
+  for (const k of FILTERS) { const el = $('dv-' + k); if (el) DV[k] = el.value.trim(); }
+  // Only the filters go to the API (DV also remembers termResolved, which the API would refuse).
+  const qs = new URLSearchParams(FILTERS.filter((k) => DV[k]).map((k) => [k, DV[k]]));
   const box = $('dv-tbl'); if (!box) return;
   try {
     const d = await api('/development/board?' + qs);
