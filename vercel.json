@@ -4,6 +4,7 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run vercel-build",
   "outputDirectory": "public",
+  "regions": ["fra1"],
   "functions": {
     "api/index.js": {
       "memory": 1024,

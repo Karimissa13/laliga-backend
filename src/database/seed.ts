@@ -8,6 +8,7 @@ import {
 } from './entities';
 import { allPermissionKeys, DEFAULT_ROLES, MODULE_ACTIONS } from '../rbac/permissions.catalog';
 import { livePasswordProblem } from '../config/live-passwords';
+import { assertVercelLiveMode } from '../config/vercel-guard';
 
 dotenv.config();
 
@@ -26,6 +27,7 @@ function expandRolePermissions(keys: string[], all: string[]): string[] {
 }
 
 async function run() {
+  assertVercelLiveMode();
   const ds = await AppDataSource.initialize();
   console.log('DB connected. Seeding…');
 

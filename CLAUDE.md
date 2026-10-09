@@ -9,7 +9,9 @@ record for season 2026/27 Term 1). One NestJS app serves: the staff admin UI (`/
 the parent payment page (`/pay/#token`) and the API (`/api/v1`).
 
 ## Stack
-- NestJS 10 + TypeORM 0.3 + PostgreSQL 16. Node 20.
+- NestJS 10 + TypeORM 0.3 + PostgreSQL 16. Node 24 (pinned `24.x` in package.json, which Vercel follows; Node 20 is end-of-life).
+- On Vercel (`VERCEL=1`) the seeds and the app refuse to run without `LALIGA_LIVE=true` (`src/config/vercel-guard.ts`),
+  so a deploy can never create the demo logins on an internet-facing database.
 - Front end: vanilla JS SPA in `public/app.js` (no framework, strict CSP: no inline scripts/handlers).
   Actions are `data-act="name" data-a1=…` dispatched to `ACT.name`. New `ACT` entries must be defined **before**
   `const ACTIONS = {...ACT}`. Helpers: `api`, `go`, `openDrawer`, `toast`, `money`, `dmy`, `esc`, `opt`, `can`.

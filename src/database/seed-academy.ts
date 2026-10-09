@@ -13,6 +13,7 @@ import {
 } from './entities';
 import { TEST_ITEM } from '../modules/inventory/practice-item';
 import { teamLabel } from '../modules/teams/team-label';
+import { assertVercelLiveMode } from '../config/vercel-guard';
 
 dotenv.config();
 
@@ -431,7 +432,9 @@ async function testFamily(ctx: Awaited<ReturnType<typeof reference>>) {
   }
 }
 
-reference()
+Promise.resolve()
+  .then(() => assertVercelLiveMode())
+  .then(reference)
   .then(testFamily)
   .then(() => console.log('Academy seed complete.'))
   .catch((e) => { console.error(e); process.exit(1); });

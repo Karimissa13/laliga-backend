@@ -1,7 +1,9 @@
 import { shouldSynchronize } from './db-sync';
+import { assertVercelLiveMode } from './vercel-guard';
 
 /** The live system (LALIGA_LIVE=true) never starts with the development signing keys. */
 function liveSecretsCheck() {
+  assertVercelLiveMode();
   if (process.env.LALIGA_LIVE !== 'true') return;
   const a = process.env.JWT_ACCESS_SECRET || '', r = process.env.JWT_REFRESH_SECRET || '';
   if (a.length < 32 || r.length < 32 || a === r) {
