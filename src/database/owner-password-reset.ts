@@ -11,8 +11,23 @@ import { livePasswordProblem } from '../config/live-passwords';
  * While the setting exists every deploy re-applies it (a no-op when unchanged), so it must be
  * deleted once the owner has signed in — otherwise it would undo a later change made in the app.
  */
+export const FROM_SEED = 'from-SEED_OWNER_PASSWORD';
+
+/**
+ * The new password: OWNER_PASSWORD_RESET itself, or — when it is the switch FROM_SEED (no password
+ * in it, so it can be set by anyone with access) — the value the owner typed into SEED_OWNER_PASSWORD.
+ */
+export function ownerResetPassword(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const v = env.OWNER_PASSWORD_RESET;
+  if (v === FROM_SEED) {
+    if (!env.SEED_OWNER_PASSWORD) throw new Error(`OWNER_PASSWORD_RESET=${FROM_SEED} but SEED_OWNER_PASSWORD is not set.`);
+    return env.SEED_OWNER_PASSWORD;
+  }
+  return v || undefined;
+}
+
 export async function applyOwnerPasswordReset(ds: DataSource, ownerEmail: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
-  const next = env.OWNER_PASSWORD_RESET;
+  const next = ownerResetPassword(env);
   if (!next) return null;
   const problem = livePasswordProblem(next);
   if (problem) throw new Error(`OWNER_PASSWORD_RESET ${problem}.`);
