@@ -30,7 +30,8 @@ export async function applyOwnerPasswordReset(ds: DataSource, ownerEmail: string
   const next = ownerResetPassword(env);
   if (!next) return null;
   const problem = livePasswordProblem(next);
-  if (problem) throw new Error(`OWNER_PASSWORD_RESET ${problem}.`);
+  const source = env.OWNER_PASSWORD_RESET === FROM_SEED ? 'SEED_OWNER_PASSWORD (used by the owner reset)' : 'OWNER_PASSWORD_RESET';
+  if (problem) throw new Error(`${source} ${problem}. Nothing was changed.`);
 
   const [owner] = await ds.query(`SELECT id, "passwordHash" FROM users WHERE lower(email) = $1`, [ownerEmail.toLowerCase()]);
   if (!owner) throw new Error(`OWNER_PASSWORD_RESET: there is no account for ${ownerEmail}.`);
