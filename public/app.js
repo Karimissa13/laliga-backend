@@ -1,5 +1,5 @@
 const API = '/api/v1';
-let TOKEN = null, ME = null;
+let TOKEN = null, REFRESH = null, ME = null;
 
 // ---------- helpers ----------
 const $ = (id) => document.getElementById(id);
@@ -10,15 +10,43 @@ const dtm = (d) => d ? new Date(d).toLocaleString('en-GB',{day:'2-digit',month:'
 
 function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('on'); setTimeout(()=>t.classList.remove('on'),2200); }
 
-async function api(path, opts={}){
+async function api(path, opts={}, retried=false){
   const res = await fetch(API+path, {
     ...opts,
     headers: { 'Content-Type':'application/json', ...(TOKEN?{Authorization:'Bearer '+TOKEN}:{}) , ...(opts.headers||{})}
   });
+  // The access token lives 15 minutes: renew it once with the refresh token and retry.
+  if(res.status===401 && !retried && REFRESH && !/^\/auth\/(login|refresh|logout)\b/.test(path)){
+    if(await renewSession()) return api(path, opts, true);
+    endSession('Your session has ended. Please sign in again.');
+  }
   const txt = await res.text();
   let body; try { body = txt ? JSON.parse(txt) : null; } catch { body = txt; }
   if(!res.ok){ const e = new Error((body && (body.message||body.error)) || res.statusText); e.status=res.status; e.body=body; throw e; }
   return body;
+}
+
+// ---------- session ----------
+function keepSession(r){
+  TOKEN = r.accessToken; REFRESH = r.refreshToken || null;
+  try{ sessionStorage.setItem('ll-token', TOKEN); REFRESH ? sessionStorage.setItem('ll-refresh', REFRESH) : sessionStorage.removeItem('ll-refresh'); }catch{}
+}
+let renewing = null;
+/** One renewal at a time: calls that expire together wait for the same new token. */
+function renewSession(){
+  if(!renewing){
+    renewing = fetch(API+'/auth/refresh', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ refreshToken: REFRESH }) })
+      .then(async (r) => { if(!r.ok) return false; keepSession(await r.json()); return true; })
+      .catch(() => false)
+      .finally(() => { renewing = null; });
+  }
+  return renewing;
+}
+function endSession(message){
+  TOKEN = null; REFRESH = null; ME = null;
+  try{ sessionStorage.removeItem('ll-token'); sessionStorage.removeItem('ll-refresh'); }catch{}
+  $('app').classList.remove('on'); $('login').style.display='grid';
+  $('li-err').textContent = message || '';
 }
 function can(p){ return ME && (ME.permissions.includes('*') || ME.permissions.includes(p)); }
 
@@ -2938,7 +2966,9 @@ const invLink = (inv) => `<a class="lnk2 ref2" data-act="showInvoice" data-a1="$
 
 /** Download a protected file (CSV / PDF) with the sign-in token, then save or open it. */
 async function fetchFile(path, fileName, open) {
-  const res = await fetch(API + path, { headers: { Authorization: 'Bearer ' + TOKEN } });
+  const get = () => fetch(API + path, { headers: { Authorization: 'Bearer ' + TOKEN } });
+  let res = await get();
+  if (res.status === 401 && REFRESH && await renewSession()) res = await get();
   if (!res.ok) { let m = res.statusText; try { m = (await res.json()).message || m; } catch {} throw new Error(m); }
   const blob = await res.blob(), url = URL.createObjectURL(blob);
   if (open) { window.open(url, '_blank', 'noopener'); }
@@ -4262,14 +4292,18 @@ async function doLogin(){
   $('li-err').textContent=''; $('li-go').disabled=true;
   try{
     const r = await api('/auth/login', {method:'POST', body: JSON.stringify({email:$('li-email').value.trim(), password:$('li-pass').value})});
-    TOKEN = r.accessToken; try{ sessionStorage.setItem('ll-token', TOKEN); }catch{}
+    keepSession(r);
     await boot();
   }catch(e){ $('li-err').textContent = e.status===401 ? 'Invalid email or password.' : e.message; }
   finally{ $('li-go').disabled=false; }
 }
 $('li-go').onclick = doLogin;
 $('li-pass').onkeydown = e => { if(e.key==='Enter') doLogin(); };
-$('logout').onclick = () => { TOKEN=null; try{sessionStorage.removeItem('ll-token')}catch{}; $('app').classList.remove('on'); $('login').style.display='grid'; };
+$('logout').onclick = () => {
+  // End the session on the server too, so the refresh token can't be reused.
+  if(REFRESH) fetch(API+'/auth/logout', { method:'POST', headers:{'Content-Type':'application/json', ...(TOKEN?{Authorization:'Bearer '+TOKEN}:{})}, body: JSON.stringify({ refreshToken: REFRESH }) }).catch(()=>{});
+  endSession('');
+};
 
 async function boot(){
   ME = await api('/auth/me');
@@ -4281,7 +4315,8 @@ async function boot(){
 }
 
 (async () => {
-  try{ const t = sessionStorage.getItem('ll-token'); if(t){ TOKEN=t; await boot(); } }catch{}
+  try{ const t = sessionStorage.getItem('ll-token'); if(t){ TOKEN=t; REFRESH=sessionStorage.getItem('ll-refresh'); await boot(); } }
+  catch{ endSession('Your session has ended. Please sign in again.'); }
 })();
 
 
