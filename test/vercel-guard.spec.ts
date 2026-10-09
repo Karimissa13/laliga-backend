@@ -1,4 +1,31 @@
-import { vercelLiveModeProblem } from '../src/config/vercel-guard';
+import { assertVercelLiveMode, pastedSettingProblems, vercelLiveModeProblem } from '../src/config/vercel-guard';
+
+describe('pastedSettingProblems', () => {
+  it('passes clean values and ignores unknown or empty keys', () => {
+    expect(pastedSettingProblems({ LALIGA_LIVE: 'true', JWT_ACCESS_SECRET: 'abc', SOMETHING: ' x ', PORTAL_URL: '' } as any)).toEqual([]);
+  });
+
+  it('names spaces, line breaks, quotes and KEY= pastes without showing the value', () => {
+    const problems = pastedSettingProblems({
+      LALIGA_LIVE: 'true\n', NODE_ENV: ' production', DB_SYNCHRONIZE: '"false"',
+      SEED_OWNER_PASSWORD: "'hunter2-hunter2'", JWT_ACCESS_SECRET: 'JWT_ACCESS_SECRET=abc',
+    } as any);
+    expect(problems).toHaveLength(5);
+    expect(problems.join(' ')).not.toMatch(/hunter2|abc/);
+    const about = (key: string) => problems.find((p) => p.startsWith(`${key}:`));
+    expect(about('LALIGA_LIVE')).toMatch(/space or line break/);
+    expect(about('NODE_ENV')).toMatch(/space or line break/);
+    expect(about('DB_SYNCHRONIZE')).toMatch(/quotes/);
+    expect(about('SEED_OWNER_PASSWORD')).toMatch(/quotes/);
+    expect(about('JWT_ACCESS_SECRET')).toMatch(/JWT_ACCESS_SECRET=/);
+  });
+
+  it('stops a Vercel build on a paste mistake before anything else', () => {
+    expect(() => assertVercelLiveMode({ VERCEL: '1', LALIGA_LIVE: 'true ' } as any)).toThrow(/LALIGA_LIVE: starts or ends/);
+    expect(() => assertVercelLiveMode({ VERCEL: '1', LALIGA_LIVE: 'true' } as any)).not.toThrow();
+    expect(() => assertVercelLiveMode({ LALIGA_LIVE: 'true ' } as any)).not.toThrow();
+  });
+});
 
 describe('vercelLiveModeProblem', () => {
   it('does nothing off Vercel (local, Docker, tests)', () => {

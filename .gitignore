@@ -7,3 +7,4 @@ coverage/
 .vercel
 laliga-mail.env
 *.pem
+.env.local
