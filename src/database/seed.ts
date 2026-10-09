@@ -9,6 +9,7 @@ import {
 import { allPermissionKeys, DEFAULT_ROLES, MODULE_ACTIONS } from '../rbac/permissions.catalog';
 import { livePasswordProblem } from '../config/live-passwords';
 import { assertVercelLiveMode } from '../config/vercel-guard';
+import { applyOwnerPasswordReset } from './owner-password-reset';
 
 dotenv.config();
 
@@ -103,6 +104,8 @@ async function run() {
     }));
   }
   console.log(`  super admin: ${ownerEmail}`);
+  const reset = await applyOwnerPasswordReset(ds, ownerEmail);
+  if (reset) console.log(`  ${reset}`);
 
   // Second super admin (operations). Created without a usable password: a super
   // admin sets it under Settings → Staff accounts, and Michel changes it after.
