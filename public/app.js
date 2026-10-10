@@ -3058,7 +3058,31 @@ const INV_STATUS = [['', 'Any payment status'], ['ISSUED', 'Invoice issued (unpa
   ['WRITTEN_OFF', 'Written off'], ['CANCELLED', 'Cancelled']];
 const IF_KEYS = ['keyword', 'invoiceNo', 'playerNo', 'parentNo', 'status', 'method', 'additional', 'custom', 'ageGroupId', 'locationId',
   'termId', 'invoiceFrom', 'invoiceTo', 'paymentFrom', 'paymentTo', 'amountFrom', 'amountTo'];
-let IF = { page: 1, wide: false };
+let IF = { page: 1, wide: false, sort: '', dir: '', quick: '' };
+// Selection for bulk actions: ticked ids (kept across pages), or every invoice in the search.
+let INV_SEL = new Set(), INV_ALL = null;
+
+// One-click filters, applied on top of the form (their keys win).
+const dubaiToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Dubai' });
+const addDaysIso = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const mondayIso = () => { const t = dubaiToday(), d = new Date(t + 'T00:00:00Z'); return addDaysIso(t, -((d.getUTCDay() + 6) % 7)); };
+/** The term in progress, else the next one to start. */
+function currentTermLk() {
+  const t = dubaiToday(), terms = (LK.terms || []).filter((x) => x.type === 'TERM' && x.startDate && x.endDate);
+  return terms.find((x) => x.startDate <= t && x.endDate >= t) || terms.filter((x) => x.startDate > t).sort((a, b) => a.startDate.localeCompare(b.startDate))[0] || null;
+}
+const INV_QUICK = [
+  ['overdue', 'Overdue', () => ({ status: 'OVERDUE' })],
+  ['unpaidTerm', 'Unpaid this term', () => { const t = currentTermLk(); return t ? { open: 'true', termId: t.id } : { open: 'true' }; }],
+  ['due7', 'Due in the next 7 days', () => ({ open: 'true', dueFrom: dubaiToday(), dueTo: addDaysIso(dubaiToday(), 7) })],
+  ['paidWeek', 'Paid this week', () => ({ paymentFrom: mondayIso(), paymentTo: dubaiToday() })],
+  ['plan', 'Has instalments', () => ({ hasPlan: 'true' })],
+];
+// Column → server sort key. Text columns start A→Z, numbers and dates start highest/newest first.
+const INV_SORT = { no: 'number', parent: 'parent', players: 'players', pcount: 'players', loc: 'location', tot: 'total', refund: 'refunded',
+  wo: 'writeOff', rec: 'received', wal: 'wallet', pend: 'pending', date: 'issueDate', st: 'status', pdate: 'paymentDate', mail: 'emailedAt' };
+const INV_SORT_ASC_FIRST = new Set(['parent', 'location', 'status']);
+
 VIEWS.invoices = async () => {
   await loadLookups();
   const v = (k) => esc(IF[k] ?? '');
@@ -3087,7 +3111,10 @@ VIEWS.invoices = async () => {
     </div>
     <div class="fbar"><div style="display:flex;gap:8px"><button class="btn sm" data-act="invSearch">Search</button><button class="btn sm ghost" data-act="invClear">Clear</button></div>
       <span class="fcount" id="if-count"></span><button class="btn sm ghost" data-act="invCsv">Export Excel</button></div></div>
+  <div class="qchips" role="group" aria-label="Quick filters">${INV_QUICK.map(([k, l]) =>
+    `<button class="qchip${IF.quick === k ? ' on' : ''}" data-act="invQuick" data-a1="${k}" aria-pressed="${IF.quick === k}">${l}</button>`).join('')}</div>
   <div id="if-tot"></div>
+  <div id="if-bulk"></div>
   <div class="card tblwrap" id="if-tbl"><div class="loading">Loading…</div></div>`;
   $('view').querySelectorAll('.filters input').forEach((i) => i.addEventListener('keydown', (e) => { if (e.key === 'Enter') ACT.invSearch(); }));
   await loadInvoices();
@@ -3096,10 +3123,25 @@ function readInvFilters() {
   for (const k of IF_KEYS) { const el = $('if-' + k); if (el) IF[k] = el.value.trim(); }
   const qs = new URLSearchParams();
   for (const k of IF_KEYS) if (IF[k]) qs.set(k, IF[k]);
+  const quick = INV_QUICK.find(([k]) => k === IF.quick);
+  if (quick) for (const [k, v] of Object.entries(quick[2]())) qs.set(k, v);
+  if (IF.sort) { qs.set('sort', IF.sort); qs.set('dir', IF.dir || 'desc'); }
   return qs;
 }
-ACT.invSearch = () => { IF.page = 1; loadInvoices(); };
-ACT.invClear = () => { IF = { page: 1, wide: IF.wide }; go('invoices'); };
+/** A new search or filter starts a new selection. */
+function invNewSearch() { IF.page = 1; INV_SEL.clear(); INV_ALL = null; }
+ACT.invSearch = () => { invNewSearch(); loadInvoices(); };
+ACT.invClear = () => { invNewSearch(); IF = { page: 1, wide: IF.wide, sort: '', dir: '', quick: '' }; go('invoices'); };
+ACT.invQuick = (k) => {
+  IF.quick = IF.quick === k ? '' : k; invNewSearch();
+  document.querySelectorAll('.qchip').forEach((b) => { const on = b.dataset.a1 === IF.quick; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+  loadInvoices();
+};
+ACT.invSort = (key) => {
+  if (IF.sort === key) IF.dir = IF.dir === 'asc' ? 'desc' : 'asc';
+  else { IF.sort = key; IF.dir = INV_SORT_ASC_FIRST.has(key) ? 'asc' : 'desc'; }
+  IF.page = 1; loadInvoices();
+};
 ACT.invWide = () => { IF.wide = !IF.wide; go('invoices'); };
 ACT.invPage = (p) => { IF.page = Number(p); loadInvoices(); };
 ACT.invCsv = async () => { try { await fetchFile('/invoice-register.csv?' + readInvFilters(), 'Invoices.csv'); } catch (e) { toast(e.message); } };
@@ -3114,27 +3156,44 @@ async function loadInvoices() {
       <span>Wallet <b>${money(t.wallet)}</b></span><span>Pending <b class="bad">${money(t.pending)}</b></span><span>Written off <b>${money(t.writeOff)}</b></span><span>Refunded <b>${money(t.refunded)}</b></span></div>`;
     const wide = IF.wide;
     INV_ROWS = new Map(d.data.map((i) => [i.id, i]));
-    const head = [['act', 'Action'], ['no', 'Invoice No'], ['parent', 'Parent'], ['email', 'Email'], ['mobile', 'Mobile'], ['players', 'Players'], ['sub', 'Subscription Details'], ['loc', 'Location'],
-      ['tot', 'Total incl. VAT'], ...(wide ? [['totx', 'Total excl. VAT'], ['vat', 'VAT Amount'], ['refund', 'Partial Refund incl. VAT'], ['wo', 'Write Off incl. VAT'], ['rr', 'Refund / Write-off Reason']] : []),
+    // "All columns" matches the old screen: players count, separate reasons, instalments as three columns.
+    const head = [['act', 'Action'], ['no', 'Invoice No'], ['parent', 'Parent'], ['email', 'Email'], ['mobile', 'Mobile'], ['players', 'Players'],
+      ...(wide ? [['pcount', 'Players Count']] : []), ['sub', 'Subscription Details'], ['loc', 'Location'],
+      ['tot', 'Total incl. VAT'], ...(wide ? [['totx', 'Total excl. VAT'], ['vat', 'VAT Amount'], ['refund', 'Partial Refund incl. VAT'], ['rreason', 'Partial Refund Reason'],
+        ['wo', 'Write Off incl. VAT'], ['wreason', 'Write Off Reason']] : []),
       ['rec', 'Received'], ...(wide ? [['vrec', 'VAT on Received'], ['nrec', 'Net Received excl. VAT']] : []), ['wal', 'Wallet'],
-      ['pend', 'Pending'], ...(wide ? [['vpend', 'VAT on Pending'], ['npend', 'Net Pending excl. VAT'], ['inst', 'Installments (paid / total)']] : []),
+      ['pend', 'Pending'], ...(wide ? [['vpend', 'VAT on Pending'], ['npend', 'Net Pending excl. VAT'],
+        ['inst', 'Total Installments'], ['instp', 'Paid Installments'], ['instq', 'Pending Installments']] : []),
       ['date', 'Invoice Date'], ['st', 'Payment Status'], ['pdate', 'Payment Date'], ['pm', 'Payment Method'], ['add', 'Additional'], ['mail', 'Emailed']];
-    const num = new Set(['tot', 'totx', 'vat', 'refund', 'wo', 'rec', 'vrec', 'nrec', 'wal', 'pend', 'vpend', 'npend']);
+    const num = new Set(['pcount', 'tot', 'totx', 'vat', 'refund', 'wo', 'rec', 'vrec', 'nrec', 'wal', 'pend', 'vpend', 'npend', 'inst', 'instp', 'instq']);
+    const th = ([k, l]) => {
+      const s = INV_SORT[k];
+      if (!s) return `<th data-col="${k}" class="${num.has(k) ? 'num' : ''}">${l}</th>`;
+      const on = IF.sort === s, arrow = on ? (IF.dir === 'asc' ? '▲' : '▼') : '';
+      return `<th data-col="${k}" class="${num.has(k) ? 'num' : ''}" aria-sort="${on ? (IF.dir === 'asc' ? 'ascending' : 'descending') : 'none'}">`
+        + `<button class="thsort" data-act="invSort" data-a1="${s}" title="Sort by ${esc(l)}">${l}<span class="sarr">${arrow}</span></button></th>`;
+    };
+    const pageIds = d.data.map((i) => i.id);
+    const allOnPage = pageIds.length > 0 && pageIds.every((id) => INV_ALL || INV_SEL.has(id));
     box.innerHTML = d.data.length ? `<table id="if-table" class="dir">
-      <thead><tr>${head.map(([k, l]) => `<th data-col="${k}" class="${num.has(k) ? 'num' : ''}">${l}</th>`).join('')}</tr></thead>
+      <thead><tr><th class="selcol" data-col="sel"><input type="checkbox" data-act="invSelPage" aria-label="Select the invoices on this page"${allOnPage ? ' checked' : ''}></th>${head.map(th).join('')}</tr></thead>
       <tbody>${d.data.map((i) => `<tr>
+        <td class="selcol"><input type="checkbox" data-act="invSel" data-a1="${i.id}" aria-label="Select ${esc(i.number)}"${INV_ALL || INV_SEL.has(i.id) ? ' checked' : ''}></td>
         <td><div class="rowacts"><button class="btn sm ghost" data-act="showInvoice" data-a1="${i.id}">Open</button><button class="btn sm ghost" data-act="invPdf" data-a1="${i.id}" data-a2="${esc(i.number)}" title="Preview the PDF">PDF</button><button class="btn sm ghost" data-act="invMenu" data-a1="${i.id}" title="More actions" aria-haspopup="menu">Actions ▾</button></div></td>
         <td>${invLink(i)}</td>
         <td title="${esc(i.parent.name)}">${esc(i.parent.name)} <span class="ref">${esc(i.parent.ref)}</span></td>
         <td title="${esc(i.parent.email || '')}">${esc(i.parent.email || '—')}</td><td>${esc(fmtPhone(i.parent.mobile))}</td>
         <td>${(i.players || []).map((p) => `<a class="lnk2" data-act="openPlayer" data-a1="${p.id}">${esc(p.ref)}</a> <span class="mini">${esc(p.name)}</span>`).join('<br>') || '—'}</td>
+        ${wide ? `<td class="num">${i.playersCount}</td>` : ''}
         <td class="cm" title="${esc(i.subscription)}">${esc(i.subscription)}</td><td>${esc(i.location || '—')}</td>
         <td class="num">${f2(i.totalInclVat)}</td>
-        ${wide ? `<td class="num">${f2(i.totalExclVat)}</td><td class="num">${f2(i.vat)}</td><td class="num">${f2(i.refunded)}</td><td class="num">${f2(i.writeOff)}</td><td class="cm">${esc([i.refundReason, i.writeOffReason].filter(Boolean).join(' · ') || '—')}</td>` : ''}
+        ${wide ? `<td class="num">${f2(i.totalExclVat)}</td><td class="num">${f2(i.vat)}</td><td class="num">${f2(i.refunded)}</td><td class="cm" title="${esc(i.refundReason || '')}">${esc(i.refundReason || '—')}</td>
+          <td class="num">${f2(i.writeOff)}</td><td class="cm" title="${esc(i.writeOffReason || '')}">${esc(i.writeOffReason || '—')}</td>` : ''}
         <td class="num">${f2(i.received)}</td>${wide ? `<td class="num">${f2(i.vatOnReceived)}</td><td class="num">${f2(i.netReceived)}</td>` : ''}
         <td class="num">${f2(i.wallet)}</td>
         <td class="num"><b class="${i.pending > 0 ? 'bad' : ''}">${f2(i.pending)}</b></td>
-        ${wide ? `<td class="num">${f2(i.vatOnPending)}</td><td class="num">${f2(i.netPending)}</td><td class="num">${i.installments.paid} / ${i.installments.total}</td>` : ''}
+        ${wide ? `<td class="num">${f2(i.vatOnPending)}</td><td class="num">${f2(i.netPending)}</td>
+          <td class="num">${i.installments.total}</td><td class="num">${i.installments.paid}</td><td class="num">${i.installments.pending}</td>` : ''}
         <td>${dmy(i.issueDate)}</td><td>${i.overdue ? '<span class="pill p-bad">Overdue</span>' : statusPill(i.status)}</td>
         <td>${dmy(i.lastPaymentAt)}</td><td>${esc(i.methods.join(', ') || '—')}</td><td>${i.additional ? 'Yes' : i.custom ? 'Custom' : 'No'}</td>
         <td>${i.emailedAt ? dmy(i.emailedAt) : '<span class="mini">—</span>'}</td></tr>`).join('')}</tbody></table>
@@ -3143,8 +3202,101 @@ async function loadInvoices() {
         <button class="btn sm ghost" data-act="invPage" data-a1="${d.meta.page + 1}" ${d.meta.page >= d.meta.pages ? 'disabled' : ''}>Next ›</button></span></div>`
       : '<div class="empty">No invoices match.</div>';
     resizableTable($('if-table'), wide ? 'invwide' : 'inv');
+    IF.count = t.count;
+    renderInvBulk();
   } catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
+
+// ---------- invoices: selection and bulk actions ----------
+const invSelCount = () => (INV_ALL ? INV_ALL.length : INV_SEL.size);
+function renderInvBulk(progress) {
+  const box = $('if-bulk'); if (!box) return;
+  const n = invSelCount();
+  if (!n && !progress) { box.innerHTML = ''; return; }
+  if (progress) {
+    box.innerHTML = `<div class="bulkbar" role="status"><span>${esc(progress.label)} — ${progress.done} of ${progress.total}</span>
+      <progress max="${progress.total}" value="${progress.done}"></progress></div>`;
+    return;
+  }
+  const more = !INV_ALL && IF.count > INV_SEL.size;
+  box.innerHTML = `<div class="bulkbar"><span><b>${n}</b> invoice${n === 1 ? '' : 's'} selected${INV_ALL ? ' (every invoice in this search)' : ''}</span>
+    ${more ? `<button class="btn sm ghost" data-act="invSelAll">Select all ${IF.count} in this search</button>` : ''}
+    <span class="grow"></span>
+    ${can('invoice.edit') ? '<button class="btn sm" data-act="invBulk" data-a1="email">Email invoices</button>' : ''}
+    ${can('payment.create') ? '<button class="btn sm" data-act="invBulk" data-a1="links">Send payment links</button>' : ''}
+    <button class="btn sm ghost" data-act="invBulkCsv">Export selected</button>
+    <button class="btn sm ghost" data-act="invSelClear">Clear selection</button></div>`;
+}
+ACT.invSel = (id) => {
+  if (INV_ALL) { INV_SEL = new Set(INV_ALL); INV_ALL = null; }   // un-ticking one row leaves an explicit selection
+  INV_SEL.has(id) ? INV_SEL.delete(id) : INV_SEL.add(id);
+  const head = document.querySelector('#if-table thead input[type=checkbox]');
+  if (head) head.checked = [...INV_ROWS.keys()].every((x) => INV_SEL.has(x));
+  renderInvBulk();
+};
+ACT.invSelPage = () => {
+  if (INV_ALL) { INV_SEL = new Set(INV_ALL); INV_ALL = null; }
+  const ids = [...INV_ROWS.keys()], all = ids.every((x) => INV_SEL.has(x));
+  ids.forEach((x) => (all ? INV_SEL.delete(x) : INV_SEL.add(x)));
+  document.querySelectorAll('#if-table tbody input[type=checkbox]').forEach((c) => { c.checked = !all; });
+  renderInvBulk();
+};
+ACT.invSelAll = async () => {
+  try {
+    const qs = readInvFilters(); qs.delete('page'); qs.delete('limit');
+    const r = await api('/invoice-register/ids?' + qs);
+    INV_ALL = r.ids; INV_SEL.clear();
+    if (r.capped) toast(`Selected the first ${r.cap} — narrow the search to act on the rest`);
+    document.querySelectorAll('#if-table input[type=checkbox]').forEach((c) => { c.checked = true; });
+    renderInvBulk();
+  } catch (e) { toast(e.message); }
+};
+ACT.invSelClear = () => { INV_SEL.clear(); INV_ALL = null; document.querySelectorAll('#if-table input[type=checkbox]').forEach((c) => { c.checked = false; }); renderInvBulk(); };
+ACT.invBulkCsv = async () => {
+  try {
+    // Every invoice in the search: export by the search itself; a hand-picked selection: by id.
+    if (INV_ALL) return await fetchFile('/invoice-register.csv?' + readInvFilters(), 'Invoices.csv');
+    if (INV_SEL.size > 150) return toast('Export up to 150 hand-picked invoices, or use "Select all in this search"');
+    await fetchFile('/invoice-register.csv?ids=' + [...INV_SEL].join(','), 'Invoices-selected.csv');
+  } catch (e) { toast(e.message); }
+};
+const INV_BULK = {
+  email: { path: '/invoice-bulk/email', title: 'Email invoices', verb: 'Email', what: 'the invoice PDF to each parent (copied to the additional email)',
+    note: 'Draft and cancelled invoices are skipped.' },
+  links: { path: '/invoice-bulk/payment-links', title: 'Send payment links', verb: 'Send', what: 'a payment link for what is still owed to each parent',
+    note: 'Paid, cancelled and draft invoices are skipped. Past the due date, the email reads as a reminder.' },
+};
+ACT.invBulk = (kind) => {
+  const k = INV_BULK[kind], n = invSelCount(); if (!k || !n) return;
+  openDrawer(k.title, `<p>${k.verb} ${esc(k.what)} — <b>${n}</b> invoice${n === 1 ? '' : 's'}.</p>
+    <div class="note info">${esc(k.note)} Each one is logged in the Email log and the activity log.</div>
+    <div class="row-end" style="margin-top:14px"><button class="btn ghost" data-act="closeDrawer">Cancel</button>
+      <button class="btn" data-act="invBulkGo" data-a1="${kind}">${k.verb} ${n}</button></div>`);
+};
+ACT.invBulkGo = async (kind) => {
+  const k = INV_BULK[kind]; if (!k) return;
+  const ids = INV_ALL ? [...INV_ALL] : [...INV_SEL];
+  closeDrawer();
+  const results = [], BATCH = 25;
+  try {
+    for (let i = 0; i < ids.length; i += BATCH) {
+      renderInvBulk({ label: k.title, done: i, total: ids.length });
+      const r = await api(k.path, { method: 'POST', body: JSON.stringify({ ids: ids.slice(i, i + BATCH) }) });
+      results.push(...r.results);
+    }
+  } catch (e) { toast(e.message); }
+  const by = (o) => results.filter((r) => r.outcome === o);
+  const word = { sent: 'Sent', recorded: 'Recorded only', skipped: 'Skipped', failed: 'Failed' };
+  const stopped = results.length < ids.length ? `<div class="note bad">Stopped after ${results.length} of ${ids.length}. The rest were not processed.</div>` : '';
+  openDrawer(`${k.title} — done`, `${stopped}
+    <div class="totbar"><span>Sent <b class="good">${by('sent').length}</b></span><span>Recorded only <b>${by('recorded').length}</b></span>
+      <span>Skipped <b>${by('skipped').length}</b></span><span>Failed <b class="bad">${by('failed').length}</b></span></div>
+    ${by('recorded').length ? '<div class="note warn">Email is not connected yet, so these are recorded in the Email log but not delivered.</div>' : ''}
+    <table class="dir"><thead><tr><th>Invoice</th><th>Result</th><th>Detail</th></tr></thead><tbody>
+      ${results.map((r) => `<tr><td>${esc(r.number || '—')}</td><td>${word[r.outcome] || r.outcome}</td><td class="cm">${esc(r.detail)}</td></tr>`).join('')}</tbody></table>`, true);
+  renderInvBulk();
+  loadInvoices();
+};
 
 // ---------- the invoice drawer ----------
 window.showInvoice = async (id) => {

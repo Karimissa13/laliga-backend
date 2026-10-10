@@ -534,3 +534,17 @@ table.tsheet .tsck{width:18px;height:18px;accent-color:var(--good)}
 .actmenu .ami{all:unset;cursor:pointer;padding:8px 10px;border-radius:7px;font-size:13px;color:var(--ink)}
 .actmenu .ami:hover,.actmenu .ami:focus-visible{background:var(--surface-2)}
 .actmenu hr{border:0;border-top:1px solid var(--line);margin:4px 2px}
+
+/* ---- invoices: quick filters, sortable headers, selection bar ---- */
+.qchips{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.qchip{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer}
+.qchip:hover{border-color:var(--coral)}
+.qchip.on{background:var(--coral-wash);border-color:var(--coral);color:var(--coral-2);font-weight:600}
+.thsort{all:unset;cursor:pointer;display:inline-flex;gap:4px;align-items:center;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.thsort:hover{color:var(--coral)}
+.thsort:focus-visible{outline:2px solid var(--coral);outline-offset:2px;border-radius:3px}
+.thsort .sarr{font-size:10px;color:var(--coral)}
+.bulkbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--info-wash);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:12.5px}
+.bulkbar .grow{flex:1}
+.bulkbar progress{width:180px;height:8px}
+th.selcol,td.selcol{width:34px;text-align:center}

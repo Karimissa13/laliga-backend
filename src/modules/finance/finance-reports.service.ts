@@ -55,8 +55,36 @@ export interface InvoiceRegisterFilter {
   ageGroupId?: string; locationId?: string; termId?: string;
   invoiceFrom?: string; invoiceTo?: string; paymentFrom?: string; paymentTo?: string;
   amountFrom?: number; amountTo?: number;
+  /** Quick filters: still owed (issued / part paid with a balance), due-date window, has an instalment plan. */
+  open?: boolean; dueFrom?: string; dueTo?: string; hasPlan?: boolean;
+  /** Only these invoices (bulk export of a selection). */
+  ids?: string[];
+  sort?: InvoiceSortKey; dir?: 'asc' | 'desc';
   page?: number; limit?: number;
 }
+
+/**
+ * Sortable columns of the invoices screen. Each key maps to a fixed SQL
+ * expression — the sort value from the request never reaches the SQL itself.
+ */
+export const INVOICE_SORT: Record<string, string> = {
+  number: `NULLIF(regexp_replace(i.number, '\\D', '', 'g'), '')::numeric`,
+  issueDate: `i."issueDate"`,
+  dueDate: `i."dueDate"`,
+  parent: `lower(g."fullName")`,
+  players: `(SELECT count(DISTINCT li."playerId") FROM invoice_line_items li WHERE li."invoiceId" = i.id)`,
+  location: `(SELECT l.name FROM locations l WHERE l.id = ${LOCATION_SQL('i')})`,
+  total: `i.total`,
+  received: RECEIVED_SQL('i'),
+  wallet: WALLET_SQL('i'),
+  pending: `CASE WHEN i.status IN ('ISSUED', 'PART_PAID') THEN ${BALANCE_SQL('i')} ELSE 0 END`,
+  refunded: `i."amountRefunded"`,
+  writeOff: `i."writeOffAmount"`,
+  status: `i.status`,
+  paymentDate: `(SELECT max(x."paidAt") FROM payments x WHERE x."invoiceId" = i.id AND x.status = 'COMPLETED' AND x.direction = 'INBOUND')`,
+  emailedAt: `(SELECT max(c."sentAt") FROM communications c WHERE c.kind = 'invoice' AND c.attachments @> jsonb_build_array(jsonb_build_object('id', i.id::text)))`,
+};
+export type InvoiceSortKey = keyof typeof INVOICE_SORT;
 
 /**
  * Read models for the finance screens: the Payment Report (one row per money
@@ -187,7 +215,28 @@ export class FinanceReportsService {
     }
     if (f.amountFrom != null && !Number.isNaN(f.amountFrom)) w.push(`i.total >= ${p(f.amountFrom)}`);
     if (f.amountTo != null && !Number.isNaN(f.amountTo)) w.push(`i.total <= ${p(f.amountTo)}`);
+    if (f.open) w.push(`(i.status IN ('ISSUED', 'PART_PAID') AND ${BALANCE_SQL('i')} > 0.05)`);
+    if (f.dueFrom) w.push(`i."dueDate" >= ${p(f.dueFrom)}::date`);
+    if (f.dueTo) w.push(`i."dueDate" <= ${p(f.dueTo)}::date`);
+    if (f.hasPlan) w.push(`EXISTS (SELECT 1 FROM invoice_instalments ii WHERE ii."invoiceId" = i.id)`);
+    if (f.ids?.length) w.push(`i.id = ANY(${p(f.ids)}::uuid[])`);
     return { where: w.length ? `WHERE ${w.join(' AND ')}` : '', params, p };
+  }
+
+  private registerOrder(f: InvoiceRegisterFilter) {
+    const expr = f.sort ? INVOICE_SORT[f.sort] : undefined;
+    if (!expr) return `ORDER BY i."createdAt" DESC`;
+    const dir = f.dir === 'asc' ? 'ASC' : 'DESC';
+    // Empty values last either way; newest first among equals.
+    return `ORDER BY ${expr} ${dir} NULLS LAST, i."createdAt" DESC`;
+  }
+
+  /** Every invoice id in a search (for "select all in this search"), capped. */
+  async invoiceRegisterIds(f: InvoiceRegisterFilter, cap = 2000) {
+    const { where, params, p } = this.registerWhere(f);
+    const rows: Array<{ id: string }> = await this.ds.query(
+      `SELECT i.id FROM invoices i JOIN guardians g ON g.id = i."guardianId" ${where} ${this.registerOrder(f)} LIMIT ${p(cap + 1)}`, params);
+    return { ids: rows.slice(0, cap).map((r) => r.id), capped: rows.length > cap, cap };
   }
 
   async invoiceRegister(f: InvoiceRegisterFilter, opts: { all?: boolean } = {}) {
@@ -224,7 +273,7 @@ export class FinanceReportsService {
              (SELECT max(c."sentAt") FROM communications c WHERE c.kind = 'invoice' AND c.attachments @> jsonb_build_array(jsonb_build_object('id', i.id::text))) AS "emailedAt",
              (SELECT l.name FROM locations l WHERE l.id = ${LOCATION_SQL('i')}) AS location
       ${base}
-      ORDER BY i."createdAt" DESC
+      ${this.registerOrder(f)}
       LIMIT ${p(limit)} OFFSET ${p((page - 1) * limit)}`, params);
 
     const vatPart = (incl: number) => money(incl - incl / 1.05);

@@ -34,6 +34,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { ParentPortalModule } from './modules/parent-portal/parent-portal.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { PaymentLinksModule } from './modules/payment-links/payment-links.module';
+import { InvoiceBulkModule } from './modules/invoice-bulk/invoice-bulk.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
@@ -67,6 +68,7 @@ import { PaymentLinksModule } from './modules/payment-links/payment-links.module
     ParentPortalModule,
     InventoryModule,
     PaymentLinksModule,
+    InvoiceBulkModule,
   ],
   controllers: [HealthController],
   providers: [
