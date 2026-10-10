@@ -14,7 +14,7 @@ import express, { json, urlencoded } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
-import { corsOrigin, stripRewritePathParam } from './common/vercel-request';
+import { corsOrigin, prepareVercelRequest } from './common/vercel-request';
 
 let cached: express.Express | null = null;
 
@@ -60,6 +60,6 @@ async function bootstrap(): Promise<express.Express> {
 
 export default async function handler(req: any, res: any) {
   const server = await bootstrap();
-  if (typeof req.url === 'string') req.url = stripRewritePathParam(req.url);
+  prepareVercelRequest(req);
   return server(req, res);
 }

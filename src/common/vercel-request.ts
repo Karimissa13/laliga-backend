@@ -22,6 +22,24 @@ export function stripRewritePathParam(url: string): string {
 }
 
 /**
+ * Prepare a request arriving through the Vercel function before Express sees it.
+ *
+ * Vercel's Node runtime gives the request a ready-made, lazily parsed `req.query`
+ * (and `req.body`). Express only parses the query string itself when `req.query`
+ * is empty — so stripping `?path=` from `req.url` alone is not enough: the copy in
+ * Vercel's `req.query` would still reach the validation pipe. Reset it so Express
+ * parses the cleaned URL. (The body is left alone: Express's parsers replace it.)
+ */
+export function prepareVercelRequest(req: { url?: string; query?: unknown }) {
+  if (typeof req.url !== 'string') return;
+  const cleaned = stripRewritePathParam(req.url);
+  if (cleaned === req.url) return;
+  req.url = cleaned;
+  // Vercel defines `query` as a configurable lazy property; replace it with a plain, empty one.
+  Object.defineProperty(req, 'query', { value: undefined, writable: true, configurable: true, enumerable: true });
+}
+
+/**
  * Browser origins allowed to call the API. `CORS_ORIGINS` (comma-separated) when set; otherwise
  * the live system answers its own site only (false = no CORS headers), and a non-live one
  * stays open for local tools.
