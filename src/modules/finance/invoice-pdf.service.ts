@@ -2,7 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import PDFDocument from 'pdfkit';
-import { Enrolment, Invoice, RevenueStream } from '../../database/entities';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { CreditNote, Enrolment, Invoice, Payment, RevenueStream } from '../../database/entities';
 import { Proration, ProrationService } from './proration.service';
 import { SettingsService } from './settings.service';
 import { PACKAGE_LABEL, hoursPerSession, defaultSessionsPerWeek } from './pricing';
@@ -27,6 +29,19 @@ const isoDate = (d?: string | Date | null) => {
 const t12 = (t?: string | null) => (t ? t.slice(0, 5) : '');
 
 /**
+ * public/brand/logo-on-dark.png (red + white LaLiga Academy Abu Dhabi artwork), read once.
+ * public/ ships with the Vercel function (vercel.json includeFiles) and sits at the project root locally.
+ */
+let LOGO: Buffer | null | undefined;
+export function brandLogo(): Buffer | null {
+  if (LOGO !== undefined) return LOGO;
+  const candidates = [join(__dirname, '..', '..', '..', 'public', 'brand', 'logo-on-dark.png'), join(process.cwd(), 'public', 'brand', 'logo-on-dark.png')];
+  LOGO = null;
+  for (const p of candidates) { try { LOGO = readFileSync(p); break; } catch { /* try the next location */ } }
+  return LOGO;
+}
+
+/**
  * The tax invoice as a PDF, laid out like the academy's existing invoice:
  * dark header, bill-to block, description table with the player's programme
  * details, extras, discounts, bank details and totals, then the terms page.
@@ -37,6 +52,8 @@ export class InvoicePdfService {
   constructor(
     @InjectRepository(Invoice) private readonly invoices: Repository<Invoice>,
     @InjectRepository(Enrolment) private readonly enrolments: Repository<Enrolment>,
+    @InjectRepository(CreditNote) private readonly creditNotes: Repository<CreditNote>,
+    @InjectRepository(Payment) private readonly payments: Repository<Payment>,
     private readonly settings: SettingsService,
     private readonly proration: ProrationService,
   ) {}
@@ -73,13 +90,7 @@ export class InvoicePdfService {
     const W = 595.28, M = 40, CW = W - 2 * M;
     const col = { desc: M, qty: M + 262, unit: M + 318, total: M + 400, end: W - M };
 
-    // ---- header -------------------------------------------------------------
-    doc.rect(0, 30, W, 48).fill(C.ink);
-    doc.fillColor(C.white).font('Helvetica-Bold').fontSize(26).text('TAX INVOICE', M - 16, 41);
-    doc.rect(W - 205, 32, 168, 44).fill('#1c1a19');
-    doc.font('Helvetica-Bold').fontSize(17).fillColor(C.red).text('LALIGA', W - 195, 38, { continued: true })
-      .fillColor(C.white).font('Helvetica').text(' ACADEMY');
-    doc.font('Helvetica-Bold').fontSize(10).fillColor(C.red).text('ABU DHABI', W - 205, 59, { width: 168, align: 'center', characterSpacing: 1 });
+    this.header(doc, 'TAX INVOICE', W, M);
 
     // ---- bill to + date/number ---------------------------------------------
     const g = inv.guardian;
@@ -247,10 +258,101 @@ export class InvoicePdfService {
     return { buffer: await done, fileName: this.fileName(inv.number), number: inv.number };
   }
 
+  /** Dark title band with the academy logo (the on-dark artwork), as on the academy's printed invoice. */
+  private header(doc: PDFKit.PDFDocument, title: string, W: number, M: number) {
+    doc.rect(0, 30, W, 48).fill(C.ink);
+    doc.fillColor(C.white).font('Helvetica-Bold').fontSize(title.length > 12 ? 22 : 26).text(title, M - 16, title.length > 12 ? 43 : 41);
+    doc.rect(W - 205, 32, 168, 44).fill('#1c1a19');
+    const logo = brandLogo();
+    if (logo) {
+      doc.image(logo, W - 197, 36, { fit: [152, 36], align: 'center', valign: 'center' });
+    } else {
+      // Artwork missing from the deployment: draw the wordmark instead of failing the document.
+      doc.font('Helvetica-Bold').fontSize(17).fillColor(C.red).text('LALIGA', W - 195, 38, { continued: true })
+        .fillColor(C.white).font('Helvetica').text(' ACADEMY');
+      doc.font('Helvetica-Bold').fontSize(10).fillColor(C.red).text('ABU DHABI', W - 205, 59, { width: 168, align: 'center', characterSpacing: 1 });
+    }
+  }
+
   private footer(doc: PDFKit.PDFDocument, profile: { companyName: string; addressLine: string; trn: string }, W: number) {
     doc.rect(0, 800, W, 42).fill(C.ink);
     doc.fillColor(C.white).font('Helvetica').fontSize(8)
       .text(`${profile.companyName}, ${profile.addressLine}, TRN # ${profile.trn}`, 60, 812, { width: W - 120, align: 'center', lineGap: 2 });
+  }
+
+  /**
+   * The tax credit note, in the invoice's layout: what is credited, against which
+   * tax invoice, why, and the VAT it reverses.
+   */
+  async renderCreditNote(id: string): Promise<{ buffer: Buffer; fileName: string; number: string }> {
+    const n = await this.creditNotes.findOne({ where: { id }, relations: { invoice: true, guardian: true } });
+    if (!n) throw new NotFoundException('Credit note not found');
+    const profile = await this.settings.invoiceProfile();
+    const refund = n.paymentId ? await this.payments.findOne({ where: { id: n.paymentId } }) : null;
+
+    const doc = new PDFDocument({ size: 'A4', margin: 0, bufferPages: true, info: { Title: `Tax credit note ${n.number}`, Author: profile.companyName } });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    const done = new Promise<Buffer>((res) => doc.on('end', () => res(Buffer.concat(chunks))));
+    const W = 595.28, M = 40, CW = W - 2 * M;
+    const col = { desc: M, qty: M + 262, unit: M + 318, total: M + 400, end: W - M };
+
+    this.header(doc, 'TAX CREDIT NOTE', W, M);
+    const g = n.guardian;
+    doc.fillColor(C.text).font('Helvetica').fontSize(9.5);
+    let y = 100;
+    doc.text('To', M + 8, y); y += 18;
+    doc.font('Helvetica-Bold').text(g?.fullName ?? '', M + 8, y); y += 16;
+    doc.font('Helvetica').text(`Email ID: ${g?.email ?? ''}`, M + 8, y); y += 16;
+    doc.text(`Phone: ${g?.mobile ?? ''}`, M + 8, y); y += 16;
+    doc.text(`Parent No: ${g?.reference ?? ''}`, M + 8, y);
+    const bx = W - 230;
+    const box = (yy: number, k: string, v: string) => {
+      doc.rect(bx, yy, 78, 20).fill(C.grey); doc.rect(bx + 78, yy, 112, 20).fill('#e6e6e6');
+      doc.fillColor(C.text).font('Helvetica').fontSize(9).text(k, bx + 6, yy + 6).text(v, bx + 84, yy + 6, { width: 104 });
+    };
+    box(122, 'Date:', isoDate(n.issueDate));
+    box(146, 'Credit note:', n.number);
+    box(170, 'Tax invoice:', n.invoice?.number ?? '');
+    box(194, 'Invoice date:', isoDate(n.invoice?.issueDate));
+
+    y = 232;
+    doc.rect(M, y, CW, 20).fill(C.grey);
+    doc.fillColor(C.text).font('Helvetica-Bold').fontSize(8.5)
+      .text('Description', col.desc + 6, y + 6)
+      .text('Quantity', col.qty, y + 6, { width: 50, align: 'center' })
+      .text('Unit Price', col.unit, y + 6, { width: 76, align: 'right' })
+      .text('Total Amount', col.total, y + 6, { width: col.end - col.total - 6, align: 'right' });
+    y += 30;
+    const KIND: Record<string, string> = { REFUND: 'Refund', WRITE_OFF: 'Amount forgiven', CANCELLATION: 'Invoice cancelled' };
+    const lines = [
+      `${KIND[n.kind] ?? n.kind} against tax invoice ${n.invoice?.number ?? ''} dated ${isoDate(n.invoice?.issueDate)}`,
+      `Reason: ${n.reason}`,
+    ];
+    if (refund) lines.push(refund.method === 'WALLET' ? 'Credited to the family wallet, for future invoices' : 'Paid back to the parent');
+    const top = y;
+    doc.font('Helvetica').fontSize(9).fillColor(C.text);
+    for (const t of lines) { doc.text(t, col.desc + 6, y, { width: col.qty - col.desc - 16, lineGap: 2 }); y = doc.y + 4; }
+    const net = Number(n.netAmount);
+    doc.text('1', col.qty, top, { width: 50, align: 'center' })
+      .text(`- ${n2(net)}`, col.unit, top, { width: 76, align: 'right' })
+      .text(`- ${n2(net)}`, col.total, top, { width: col.end - col.total - 6, align: 'right' });
+
+    const bandY = Math.max(y + 24, 400), bandH = 150;
+    doc.rect(0, bandY, W, bandH).fill(C.band);
+    doc.font('Helvetica').fontSize(8.5).fillColor(C.text)
+      .text('This credit note reduces the tax invoice above by the amount shown, including the VAT charged on it.', M + 8, bandY + 22, { width: 300, lineGap: 2 })
+      .text(`TRN: ${profile.trn}`, M + 8, doc.y + 8, { width: 300 });
+    let ty = bandY + 28;
+    for (const [k, v] of [['Sub Total', `- ${n2(net)}`], ['VAT Amount', `- ${n2(Number(n.vatAmount))}`], ['Total Credit', `- ${n2(Number(n.total))}`]]) {
+      doc.rect(W - 225, ty, 95, 22).fill(C.ink);
+      doc.fillColor(C.white).font('Helvetica-Bold').fontSize(9).text(k, W - 218, ty + 7);
+      doc.fillColor(C.text).font('Helvetica-Bold').fontSize(10).text(v, W - 125, ty + 6, { width: 85, align: 'right' });
+      ty += 28;
+    }
+    this.footer(doc, profile, W);
+    doc.end();
+    return { buffer: await done, fileName: `Credit-Note-${n.number}.pdf`, number: n.number };
   }
 
   /** Several invoices at once (e.g. for a family) — returns them in order. */

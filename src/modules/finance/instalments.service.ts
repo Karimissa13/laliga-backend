@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { Invoice, InvoiceInstalment, InvoiceStatus, Payment, PaymentStatus } from '../../database/entities';
+import { CreditNoteKind, Invoice, InvoiceInstalment, InvoiceStatus, Payment, PaymentStatus } from '../../database/entities';
 import { InvoicesService } from './invoices.service';
+import { CreditNotesService } from './credit-notes.service';
 import { INSTALMENT_STATE_LABEL, InstalmentView, LedgerPayment, MAX_INSTALMENTS, PlanRow, allocate, amountsFor, planProblem } from './instalments';
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -22,6 +23,7 @@ export class InstalmentsService {
     @InjectRepository(InvoiceInstalment) private readonly rows: Repository<InvoiceInstalment>,
     @InjectRepository(Payment) private readonly payments: Repository<Payment>,
     private readonly invoicing: InvoicesService,
+    private readonly creditNotes: CreditNotesService,
   ) {}
 
   private plan(rows: InvoiceInstalment[]): PlanRow[] {
@@ -143,7 +145,7 @@ export class InstalmentsService {
   }
 
   /** Forgive what is left of an instalment: it is written off on the invoice, with the reason. */
-  async waive(invoiceId: string, seq: number, reason: string) {
+  async waive(invoiceId: string, seq: number, reason: string, opts: { creditNote?: boolean; actorId?: string } = {}) {
     const s = await this.summary(invoiceId);
     const v = s.instalments.find((x) => x.seq === seq);
     if (!v) throw new NotFoundException('Instalment not found');
@@ -157,6 +159,10 @@ export class InstalmentsService {
       writeOffAmount: r2(Number(inv.writeOffAmount) + v.remaining).toFixed(2),
       writeOffReason: [inv.writeOffReason, `Instalment ${seq} waived: ${reason}`].filter(Boolean).join(' · ').slice(0, 250),
     });
+    if (opts.creditNote) {
+      await this.creditNotes.issue({ invoiceId, kind: CreditNoteKind.WRITE_OFF, amount: v.remaining, reason: `Instalment ${seq} waived: ${reason}`,
+        instalmentSeq: seq, actorId: opts.actorId });
+    }
     await this.invoicing.recomputeStatus(invoiceId);
     return this.summary(invoiceId);
   }
@@ -165,6 +171,10 @@ export class InstalmentsService {
   async unwaive(invoiceId: string, seq: number) {
     const row = await this.rows.findOne({ where: { invoiceId, seq } });
     if (!row || row.flag !== 'WAIVED') throw new BadRequestException('This instalment is not waived.');
+    const note = await this.creditNotes.forWaiver(invoiceId, seq);
+    if (note) {
+      throw new BadRequestException(`Tax credit note ${note.number} was issued for this waiver, so it can't be undone. Invoice the amount again instead.`);
+    }
     const amt = Number(row.waivedAmount);
     const inv = (await this.invoices.findOne({ where: { id: invoiceId } }))!;
     await this.rows.update(row.id, { flag: 'NONE', waivedAmount: '0', waivedReason: null });

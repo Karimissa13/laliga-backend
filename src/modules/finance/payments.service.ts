@@ -2,10 +2,11 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
-  Invoice, Merchant, Payment, PaymentDirection, PaymentMethod, PaymentStatus,
+  CreditNoteKind, Invoice, Merchant, Payment, PaymentDirection, PaymentMethod, PaymentStatus,
   Wallet, WalletTransaction, WalletTxnType,
 } from '../../database/entities';
 import { InvoicesService } from './invoices.service';
+import { CreditNotesService } from './credit-notes.service';
 
 const money = (n: number) => Math.round(n * 100) / 100;
 
@@ -18,6 +19,7 @@ export class PaymentsService {
     @InjectRepository(WalletTransaction) private readonly walletTxns: Repository<WalletTransaction>,
     @InjectRepository(Merchant) private readonly merchants: Repository<Merchant>,
     private readonly invoicesService: InvoicesService,
+    private readonly creditNotes: CreditNotesService,
   ) {}
 
   /** A payment already recorded for this gateway transaction (webhooks can arrive twice). */
@@ -89,7 +91,13 @@ export class PaymentsService {
     if (input.toWallet) {
       await this.creditWallet(invoice.guardianId, input.amount, `Refund from ${invoice.number}`);
     }
-    return { payment, invoice: await this.invoicesService.recomputeStatus(input.invoiceId) };
+    // Money paid back reduces the supply: the tax credit note documents it.
+    const creditNote = await this.creditNotes.issue({
+      invoiceId: input.invoiceId, kind: CreditNoteKind.REFUND, amount: input.amount,
+      reason: input.reason || (input.toWallet ? 'Refund to wallet credit' : 'Refund'),
+      paymentId: payment.id, actorId: input.recordedById,
+    });
+    return { payment, creditNote, invoice: await this.invoicesService.recomputeStatus(input.invoiceId) };
   }
 
   listForInvoice(invoiceId: string) {

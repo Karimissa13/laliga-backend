@@ -3,7 +3,7 @@ import {
   OneToOne, PrimaryGeneratedColumn, UpdateDateColumn,
 } from 'typeorm';
 import {
-  DiscountKind, DiscountRule, InvoiceStatus, InvoiceType, PaymentDirection,
+  CreditNoteKind, DiscountKind, DiscountRule, InvoiceStatus, InvoiceType, PaymentDirection,
   PaymentMethod, PaymentStatus, WalletTxnType, ProgramType, RevenueStream, KitType, TermPackage,
   TeamLevel, AcademyEventKind,
 } from './enums';
@@ -106,6 +106,35 @@ export class Payment {
   @Column({ nullable: true }) notes?: string;
   /** Which instalment this payment was taken for (1–5), when the invoice has a plan. */
   @Column({ type: 'int', nullable: true }) instalmentSeq?: number | null;
+  @CreateDateColumn() createdAt: Date;
+}
+
+/**
+ * A tax credit note: the document that reduces an issued tax invoice when money
+ * is refunded, an amount is forgiven, or the invoice is cancelled. It is a record —
+ * never edited or deleted; its amounts mirror the ledger entry that caused it, so
+ * it never changes a total by itself. Numbered CN-000001 from its own sequence.
+ */
+@Entity('credit_notes')
+export class CreditNote {
+  @PrimaryGeneratedColumn('uuid') id: string;
+  @Index({ unique: true }) @Column() number: string;
+  @Index() @Column() invoiceId: string;
+  @ManyToOne(() => Invoice) @JoinColumn({ name: 'invoiceId' }) invoice: Invoice;
+  @Index() @Column() guardianId: string;
+  @ManyToOne(() => Guardian) @JoinColumn({ name: 'guardianId' }) guardian: Guardian;
+  @Column({ type: 'enum', enum: CreditNoteKind }) kind: CreditNoteKind;
+  @Index() @Column({ type: 'date' }) issueDate: string;
+  /** Amount credited, VAT included, and its split. */
+  @Column(dec) total: string;
+  @Column(dec) vatAmount: string;
+  @Column(dec) netAmount: string;
+  @Column({ type: 'varchar', length: 250 }) reason: string;
+  /** The refund payment it documents (REFUND). */
+  @Column({ type: 'uuid', nullable: true }) paymentId?: string | null;
+  /** The waived instalment it documents (WRITE_OFF from a waiver). */
+  @Column({ type: 'int', nullable: true }) instalmentSeq?: number | null;
+  @Column({ type: 'uuid', nullable: true }) createdById?: string | null;
   @CreateDateColumn() createdAt: Date;
 }
 

@@ -155,8 +155,8 @@ export class FinanceController {
   }
 
   @Post('invoices/:id/write-off') @RequirePermissions('writeoff.create') @Audit('invoice.writeoff', 'invoice')
-  writeOff(@Param('id') id: string, @Body() dto: WriteOffDto) {
-    return this.invoices.writeOff(id, dto.amount, dto.reason);
+  writeOff(@Param('id') id: string, @Body() dto: WriteOffDto, @CurrentUser() user: AuthUser) {
+    return this.invoices.writeOff(id, dto.amount, dto.reason, { creditNote: dto.creditNote, actorId: user?.id });
   }
   @Post('invoices/:id/sponsor') @RequirePermissions('invoice.manage') @Audit('invoice.sponsor', 'invoice')
   sponsor(@Param('id') id: string, @Body() dto: SponsorDto) { return this.invoices.markSponsored(id, dto.sponsored); }
@@ -183,13 +183,15 @@ export class FinanceController {
 
   @Post('invoices/:id/instalments/:seq/waive') @RequirePermissions('writeoff.create') @Audit('invoice.instalment_waive', 'invoice')
   @ApiOperation({ summary: 'Forgive what is left of an instalment (written off on the invoice, with the reason)' })
-  waiveInstalment(@Param('id') id: string, @Param('seq', ParseIntPipe) seq: number, @Body() dto: WaiveInstalmentDto) { return this.instalments.waive(id, seq, dto.reason); }
+  waiveInstalment(@Param('id') id: string, @Param('seq', ParseIntPipe) seq: number, @Body() dto: WaiveInstalmentDto, @CurrentUser() user: AuthUser) {
+    return this.instalments.waive(id, seq, dto.reason, { creditNote: dto.creditNote, actorId: user?.id });
+  }
 
   @Post('invoices/:id/instalments/:seq/unwaive') @RequirePermissions('writeoff.create') @Audit('invoice.instalment_unwaive', 'invoice')
   unwaiveInstalment(@Param('id') id: string, @Param('seq', ParseIntPipe) seq: number) { return this.instalments.unwaive(id, seq); }
 
   @Post('invoices/:id/cancel') @RequirePermissions('invoice.edit') @Audit('invoice.cancel', 'invoice')
-  cancel(@Param('id') id: string) { return this.invoices.cancel(id); }
+  cancel(@Param('id') id: string, @CurrentUser() user: AuthUser) { return this.invoices.cancel(id, user?.id); }
 
   // ---------------- Payments ----------------
   @Get('invoices/:id/payments') @RequirePermissions('payment.view')

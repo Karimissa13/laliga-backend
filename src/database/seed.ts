@@ -178,7 +178,7 @@ async function run() {
   // 5) Reference sequences -------------------------------------------------
   // Created here so a fresh database issues PR-/PL-/TR-/LA- numbers from 1 even
   // before the API has booted. Families are NOT created here — see seed-academy.ts.
-  for (const seq of ['guardian_ref_seq', 'player_ref_seq', 'lead_ref_seq', 'invoice_ref_seq']) {
+  for (const seq of ['guardian_ref_seq', 'player_ref_seq', 'lead_ref_seq', 'invoice_ref_seq', 'credit_note_ref_seq']) {
     await ds.query(`CREATE SEQUENCE IF NOT EXISTS ${seq} START 1`);
   }
 

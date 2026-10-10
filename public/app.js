@@ -3088,7 +3088,8 @@ VIEWS.invoices = async () => {
   const v = (k) => esc(IF[k] ?? '');
   const sel = (k, opts) => `<select class="sel" id="if-${k}">${opts.map(([val, t]) => opt(val, t, (IF[k] ?? '') === val)).join('')}</select>`;
   $('page-acts').innerHTML = `<button class="btn sm ghost" data-act="invWide">${IF.wide ? 'Fewer columns' : 'All columns (VAT breakdown)'}</button>
-    <button class="btn sm ghost" data-act="resetCols" data-a1="${IF.wide ? 'invwide' : 'inv'}" data-a2="invoices">Reset widths</button>`;
+    <button class="btn sm ghost" data-act="resetCols" data-a1="${IF.wide ? 'invwide' : 'inv'}" data-a2="invoices">Reset widths</button>
+    <button class="btn sm ghost" data-act="cnCsv" title="Every tax credit note (within the invoice-date range below, if set)">Credit notes (Excel)</button>`;
   $('view').innerHTML = `<div class="card filters">
     <div class="fgrid">
       <div class="w2"><label class="lbl" for="if-keyword">Search by keyword</label><input class="in" id="if-keyword" value="${v('keyword')}" placeholder="Name, email, mobile, invoice, description"></div>
@@ -3339,6 +3340,7 @@ window.showInvoice = async (id) => {
         ${Number(i.writeOffAmount) ? row('Written off', money(i.writeOffAmount)) : ''}
         ${row(bal > 0.05 ? '<b>Balance</b>' : 'Balance', bal > 0.05 ? `<b>${money(bal)}</b>` : 'Settled', bal > 0.05 ? 'bad' : 'good')}
       </div>
+      <div id="inv-cn"></div>
       <h3 class="dh3">Payments</h3>
       <table><tbody>${pays.map((p) => `<tr><td>${dmy(p.paidAt)}<div class="mini">${esc(METHOD_WORD[p.method] || p.method)}${p.merchantName ? ' · ' + esc(p.merchantName) + ' ' + esc(p.merchantNumber || '') : ''}${p.reference ? ' · ref ' + esc(p.reference) : ''}</div></td>
         <td>${p.direction === 'REFUND' ? '<span class="pill p-warn">refund</span>' : ''}</td><td class="num">${p.direction === 'REFUND' ? '−' : ''}${money(p.amount)}</td></tr>`).join('') || '<tr><td class="empty">No payments yet.</td></tr>'}</tbody></table>
@@ -3356,14 +3358,17 @@ window.showInvoice = async (id) => {
         <div class="frm" style="margin-top:10px">
           ${open && can('writeoff.create') ? `<div><label class="lbl" for="wo-amt">Write off (AED)</label><input class="in" id="wo-amt" type="number" step="0.01" min="0.01"></div>
           <div><label class="lbl" for="wo-rsn">Reason</label><input class="in" id="wo-rsn" placeholder="Why — kept on the invoice"></div>
-          <div class="full"><button class="btn sm ghost" data-act="invWriteOff" data-a1="${i.id}">Write off</button></div>` : ''}
+          <div class="full"><label class="chk"><input type="checkbox" id="wo-cn" checked> Issue a tax credit note — untick for a bad debt</label>
+            <button class="btn sm ghost" data-act="invWriteOff" data-a1="${i.id}">Write off</button></div>` : ''}
           ${can('refund.create') && Number(i.amountPaid) - Number(i.amountRefunded) > 0.005 ? `<div><label class="lbl" for="rf-amt">Partial refund (AED)</label><input class="in" id="rf-amt" type="number" step="0.01" min="0.01" max="${(Number(i.amountPaid) - Number(i.amountRefunded)).toFixed(2)}"></div>
           <div><label class="lbl" for="rf-rsn">Reason</label><input class="in" id="rf-rsn" placeholder="Why — kept on the invoice"></div>
-          <div class="full"><label class="chk"><input type="checkbox" id="rf-wal"> Credit the family wallet instead of paying it back</label> <button class="btn sm ghost" data-act="invRefund" data-a1="${i.id}">Refund</button></div>` : ''}
-          ${can('invoice.edit') && Number(i.amountPaid) <= 0.005 && i.status !== 'CANCELLED' ? `<div class="full" id="cx-box"><button class="btn sm ghost" data-act="invCancel" data-a1="${i.id}">Cancel invoice</button> <span class="mini">Only before any payment; it stays on record as cancelled.</span></div>` : ''}
+          <div class="full"><label class="chk"><input type="checkbox" id="rf-wal"> Credit the family wallet instead of paying it back</label> <button class="btn sm ghost" data-act="invRefund" data-a1="${i.id}">Refund</button>
+            <div class="mini">A tax credit note is issued for every refund.</div></div>` : ''}
+          ${can('invoice.edit') && Number(i.amountPaid) <= 0.005 && i.status !== 'CANCELLED' ? `<div class="full" id="cx-box"><button class="btn sm ghost" data-act="invCancel" data-a1="${i.id}">Cancel invoice</button> <span class="mini">Only before any payment; it stays on record as cancelled${i.status !== 'DRAFT' ? ', with a tax credit note for the full amount' : ''}.</span></div>` : ''}
         </div></details>` : ''}`);
     loadInvTraining(i.id);
     loadInvPlan(i.id);
+    loadInvCreditNotes(i.id);
     const ms = $('pay-merch');
     if (ms) {
       const merchants = await api('/merchants?activeOnly=true').catch(() => []);
@@ -3387,23 +3392,48 @@ window.recordPayment = async (id) => {
     window.showInvoice(id); if (CURRENT === 'invoices') loadInvoices(); if (CURRENT === 'paymentReport') loadPaymentReport();
   } catch (e) { $('pay-err').innerHTML = `<div class="note bad">${esc(e.message)}</div>`; }
 };
+const cnDone = (what, r) => toast(r?.creditNote ? `${what} — credit note ${r.creditNote.number} issued` : what);
 ACT.invWriteOff = async (id) => {
   const amount = Number($('wo-amt').value), reason = $('wo-rsn').value.trim();
   if (!(amount > 0) || reason.length < 3) return toast('Write-off needs an amount and a reason');
-  try { await api(`/invoices/${id}/write-off`, { method: 'POST', body: JSON.stringify({ amount, reason }) }); toast('Written off'); window.showInvoice(id); }
-  catch (e) { toast(e.message); }
+  try {
+    const r = await api(`/invoices/${id}/write-off`, { method: 'POST', body: JSON.stringify({ amount, reason, creditNote: $('wo-cn')?.checked || undefined }) });
+    cnDone('Written off', r); window.showInvoice(id); if (CURRENT === 'invoices') loadInvoices();
+  } catch (e) { toast(e.message); }
 };
 ACT.invRefund = async (id) => {
   const amount = Number($('rf-amt').value), reason = $('rf-rsn').value.trim();
   if (!(amount > 0) || reason.length < 3) return toast('A refund needs an amount and a reason');
-  try { await api(`/invoices/${id}/refund`, { method: 'POST', body: JSON.stringify({ amount, reason, toWallet: $('rf-wal').checked || undefined }) }); toast('Refund recorded'); window.showInvoice(id); if (CURRENT === 'invoices') loadInvoices(); }
-  catch (e) { toast(e.message); }
+  try {
+    const r = await api(`/invoices/${id}/refund`, { method: 'POST', body: JSON.stringify({ amount, reason, toWallet: $('rf-wal').checked || undefined }) });
+    cnDone('Refund recorded', r); window.showInvoice(id); if (CURRENT === 'invoices') loadInvoices();
+  } catch (e) { toast(e.message); }
 };
 ACT.invCancel = async (id, sure) => {
   if (!sure) { $('cx-box').innerHTML = `<button class="btn sm" data-act="invCancel" data-a1="${id}" data-a2="yes">Yes, cancel this invoice</button> <a class="lnk2" data-act="showInvoice" data-a1="${id}">Keep it</a>`; return; }
-  try { await api(`/invoices/${id}/cancel`, { method: 'POST', body: '{}' }); toast('Invoice cancelled'); window.showInvoice(id); if (CURRENT === 'invoices') loadInvoices(); }
+  try { const r = await api(`/invoices/${id}/cancel`, { method: 'POST', body: '{}' }); cnDone('Invoice cancelled', r); window.showInvoice(id); if (CURRENT === 'invoices') loadInvoices(); }
   catch (e) { toast(e.message); }
 };
+
+// ---------- tax credit notes (in the invoice drawer) ----------
+const CN_KIND = { REFUND: 'Refund', WRITE_OFF: 'Amount forgiven', CANCELLATION: 'Invoice cancelled' };
+async function loadInvCreditNotes(id) {
+  const box = $('inv-cn'); if (!box) return;
+  try {
+    const notes = await api(`/invoices/${id}/credit-notes`);
+    if (!notes.length) { box.innerHTML = ''; return; }
+    box.innerHTML = `<h3 class="dh3">Tax credit notes</h3><table><tbody>${notes.map((n) => `<tr>
+      <td><b>${esc(n.number)}</b> · ${dmy(n.issueDate)}<div class="mini">${esc(CN_KIND[n.kind] || n.kind)} — ${esc(n.reason)}</div></td>
+      <td class="num">−${money(n.total)}<div class="mini">VAT −${money(n.vatAmount)}</div></td>
+      <td><button class="btn sm ghost" data-act="cnPdf" data-a1="${n.id}" data-a2="${esc(n.number)}">PDF</button></td></tr>`).join('')}</tbody></table>`;
+  } catch { box.innerHTML = ''; }
+}
+ACT.cnCsv = async () => {
+  const from = $('if-invoiceFrom')?.value, to = $('if-invoiceTo')?.value, qs = new URLSearchParams();
+  if (from) qs.set('from', from); if (to) qs.set('to', to);
+  try { await fetchFile('/credit-notes.csv?' + qs, `Credit-Notes-${from || 'all'}-${to || 'all'}.csv`); } catch (e) { toast(e.message); }
+};
+ACT.cnPdf = async (id, number) => { try { await fetchFile(`/credit-notes/${id}/pdf`, `Credit-Note-${number}.pdf`, true); } catch (e) { toast(e.message); } };
 ACT.invIssue = async (id) => {
   try { await api(`/invoices/${id}/issue`, { method: 'POST', body: '{}' }); toast('Issued'); window.showInvoice(id); }
   catch (e) { toast(e.message); }
@@ -4248,7 +4278,8 @@ function renderInvPlan() {
       owe && edit && can('writeoff.create') ? `<button class="btn sm ghost" data-act="ipWaive" data-a1="${v.seq}">Waive</button>` : '',
       v.state === 'WAIVED' && can('writeoff.create') ? `<button class="btn sm ghost" data-act="ipUnwaive" data-a1="${v.seq}">Undo waiver</button>` : '',
     ].filter(Boolean).join('');
-    const waiveRow = INVP.waive === v.seq ? `<div class="sdrow" style="margin-top:8px"><input class="in" id="ip-wr" placeholder="Reason / approved by" style="max-width:260px"><button class="btn sm" data-act="ipWaiveGo" data-a1="${v.seq}">Waive AED ${v.remaining.toFixed(2)}</button><a class="lnk2" data-act="ipWaive" data-a1="">Cancel</a></div>` : '';
+    const waiveRow = INVP.waive === v.seq ? `<div class="sdrow" style="margin-top:8px"><input class="in" id="ip-wr" placeholder="Reason / approved by" style="max-width:260px"><button class="btn sm" data-act="ipWaiveGo" data-a1="${v.seq}">Waive AED ${v.remaining.toFixed(2)}</button><a class="lnk2" data-act="ipWaive" data-a1="">Cancel</a></div>
+      <label class="chk mini" style="margin-top:6px"><input type="checkbox" id="ip-cn" checked> Issue a tax credit note — untick for a bad debt (with a credit note the waiver can't be undone)</label>` : '';
     return `<div class="trc"><div class="trh"><span><b>Instalment ${v.seq}</b> <span class="mini">${v.percent}% · due ${dmy(v.dueDate)}</span> <span class="pill ${IST[v.state] || 'p-mute'}">${esc(v.label)}</span></span></div>
       <div class="trg">
         <div><div class="k">Amount</div><div class="v">${money(v.amount)}</div></div>
@@ -4309,7 +4340,10 @@ ACT.ipReady = async (seq, ready) => {
 ACT.ipWaive = (seq) => { INVP.waive = seq ? Number(seq) : null; renderInvPlan(); const r = $('ip-wr'); if (r) r.focus(); };
 ACT.ipWaiveGo = async (seq) => {
   const reason = ($('ip-wr')?.value || '').trim(); if (reason.length < 3) return toast('Write why it is waived (and who approved it)');
-  try { await api(`/invoices/${INVP.id}/instalments/${seq}/waive`, { method: 'POST', body: JSON.stringify({ reason }) }); toast(`Instalment ${seq} waived`); window.showInvoice(INVP.id); }
+  try {
+    await api(`/invoices/${INVP.id}/instalments/${seq}/waive`, { method: 'POST', body: JSON.stringify({ reason, creditNote: $('ip-cn')?.checked || undefined }) });
+    toast($('ip-cn')?.checked ? `Instalment ${seq} waived — credit note issued` : `Instalment ${seq} waived`); window.showInvoice(INVP.id);
+  }
   catch (e) { toast(e.message); }
 };
 ACT.ipUnwaive = async (seq) => {

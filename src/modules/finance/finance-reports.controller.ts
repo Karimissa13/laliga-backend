@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, Res } from '@nestjs/common';
+import { CreditNotesService } from './credit-notes.service';
 import { ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
@@ -64,6 +65,11 @@ export class InvoiceRegisterQueryDto {
   @ApiPropertyOptional({ default: 50 }) @IsOptional() @Transform(num) @IsInt() @Min(1) @Max(200) limit?: number;
 }
 
+export class CreditNoteQueryDto {
+  @ApiPropertyOptional({ example: '2026-10-01' }) @IsOptional() @IsDateString() from?: string;
+  @ApiPropertyOptional({ example: '2026-12-31' }) @IsOptional() @IsDateString() to?: string;
+}
+
 export class MerchantDto {
   @ApiProperty({ example: 'Network International' }) @IsString() @MinLength(2) @MaxLength(80) name: string;
   @ApiProperty({ example: '13435' }) @IsString() @MinLength(1) @MaxLength(40) merchantNumber: string;
@@ -118,6 +124,7 @@ export class FinanceReportsController {
     private readonly pdf: InvoicePdfService,
     private readonly merchants: MerchantsService,
     private readonly settings: SettingsService,
+    private readonly creditNotes: CreditNotesService,
   ) {}
 
   // ---------------- Payment report ----------------
@@ -179,6 +186,36 @@ export class FinanceReportsController {
   @ApiOperation({ summary: 'The designed tax invoice as a PDF (inline; ?download=true to save)' })
   async invoicePdf(@Param('id') id: string, @Query('download') download: string, @Res() res: Response) {
     const r = await this.pdf.render(id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `${download === 'true' ? 'attachment' : 'inline'}; filename="${r.fileName}"`);
+    res.send(r.buffer);
+  }
+
+  // ---------------- Tax credit notes ----------------
+  @Get('invoices/:id/credit-notes') @RequirePermissions('invoice.view')
+  @ApiOperation({ summary: 'Credit notes issued against an invoice (refunds, amounts forgiven, cancellation)' })
+  creditNotesFor(@Param('id', ParseUUIDPipe) id: string) { return this.creditNotes.forInvoice(id); }
+
+  @Get('credit-notes') @RequirePermissions('invoice.view')
+  @ApiOperation({ summary: 'The credit-note register for a period, with VAT totals' })
+  creditNoteRegister(@Query() q: CreditNoteQueryDto) { return this.creditNotes.list(q); }
+
+  @Get('credit-notes.csv') @RequirePermissions('invoice.view')
+  async creditNoteCsv(@Query() q: CreditNoteQueryDto, @Res() res: Response) {
+    const r = await this.creditNotes.list(q);
+    const csv = FinanceReportsService.toCsv(
+      ['Credit Note No', 'Date', 'Tax Invoice No', 'Parent No', 'Parent', 'Kind', 'Reason', 'Net Amount', 'VAT Amount', 'Total Credit'],
+      [...r.data.map((n) => [n.number, dmy(n.issueDate), n.invoice.number, n.parent.ref, n.parent.name, n.kindLabel, n.reason, f2(n.net), f2(n.vat), f2(n.total)]),
+        ['', '', '', '', '', '', 'Total', f2(r.totals.net), f2(r.totals.vat), f2(r.totals.total)]]);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="Credit-Notes-${q.from ?? 'all'}-${q.to ?? 'all'}.csv"`);
+    res.send(csv);
+  }
+
+  @Get('credit-notes/:id/pdf') @RequirePermissions('invoice.view')
+  @ApiOperation({ summary: 'The tax credit note as a PDF (inline; ?download=true to save)' })
+  async creditNotePdf(@Param('id', ParseUUIDPipe) id: string, @Query('download') download: string, @Res() res: Response) {
+    const r = await this.pdf.renderCreditNote(id);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `${download === 'true' ? 'attachment' : 'inline'}; filename="${r.fileName}"`);
     res.send(r.buffer);

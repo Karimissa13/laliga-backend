@@ -8,6 +8,7 @@ const SEQUENCES: Record<string, string> = {
   PL: 'player_ref_seq',
   TR: 'lead_ref_seq', // trials/leads
   LA: 'invoice_ref_seq',
+  CN: 'credit_note_ref_seq', // tax credit notes
 };
 
 /**

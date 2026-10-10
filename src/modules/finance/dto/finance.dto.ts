@@ -76,6 +76,8 @@ export class SetSiblingOrderDto {
 export class WriteOffDto {
   @ApiProperty() @IsNumber() @Min(0.01) amount: number;
   @ApiProperty() @IsString() reason: string;
+  @ApiPropertyOptional({ description: 'Issue a tax credit note for it (leave off for a bad debt)', default: false })
+  @IsOptional() @IsBoolean() creditNote?: boolean;
 }
 export class SponsorDto {
   @ApiProperty() @IsBoolean() sponsored: boolean;
@@ -148,6 +150,8 @@ export class InstalmentFlagDto {
 }
 export class WaiveInstalmentDto {
   @ApiProperty({ example: 'Approved by Karim — family hardship' }) @IsString() @MaxLength(200) reason: string;
+  @ApiPropertyOptional({ description: 'Issue a tax credit note for it (then the waiver cannot be undone)', default: false })
+  @IsOptional() @IsBoolean() creditNote?: boolean;
 }
 export class PaymentLinkDto {
   @ApiPropertyOptional({ description: 'Instalment number; omitted on a plan = the "ready to pay" (or next unpaid) instalment' }) @IsOptional() @IsInt() @Min(1) @Max(5) instalmentSeq?: number;

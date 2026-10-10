@@ -27,6 +27,8 @@ const LEVEL_WORD: Record<string, string> = { DEVELOPMENT: 'Development', ADVANCE
 import { ReferenceService } from '../../common/reference.service';
 import { PaginationDto, paginate } from '../../common/dto/pagination.dto';
 import { DiscountEngine } from './discount-engine.service';
+import { CreditNotesService } from './credit-notes.service';
+import { CreditNoteKind } from '../../database/entities';
 
 const money = (n: number) => Math.round(n * 100) / 100;
 
@@ -55,6 +57,7 @@ export class InvoicesService {
     private readonly discountEngine: DiscountEngine,
     private readonly pricing: PricingService,
     private readonly proration: ProrationService,
+    private readonly creditNotes: CreditNotesService,
   ) {}
 
   // ---------------------------------------------------------------- queries
@@ -564,13 +567,26 @@ export class InvoicesService {
     return this.findOne(invoiceId);
   }
 
-  async writeOff(id: string, amount: number, reason: string) {
+  /**
+   * Forgive part or all of what is owed. With `creditNote` (the default on the
+   * screen) a tax credit note documents it; leave it off for a bad debt, which
+   * VAT treats as bad-debt relief rather than a credit note.
+   */
+  async writeOff(id: string, amount: number, reason: string, opts: { creditNote?: boolean; actorId?: string } = {}) {
     const inv = await this.findOne(id);
+    if (![InvoiceStatus.ISSUED, InvoiceStatus.PART_PAID].includes(inv.status)) {
+      throw new BadRequestException(`This invoice is ${String(inv.status).toLowerCase().replace('_', ' ')} — there is nothing to write off.`);
+    }
+    const owed = money(Number(inv.total) - Number(inv.amountPaid) + Number(inv.amountRefunded) - Number(inv.writeOffAmount));
+    if (amount > owed + 0.009) throw new BadRequestException(`Only ${owed.toFixed(2)} is still owed on ${inv.number}.`);
     await this.invoices.update(id, {
       writeOffAmount: money(Number(inv.writeOffAmount) + amount).toFixed(2),
       writeOffReason: reason,
     });
-    return this.recomputeStatus(id);
+    const creditNote = opts.creditNote
+      ? await this.creditNotes.issue({ invoiceId: id, kind: CreditNoteKind.WRITE_OFF, amount, reason, actorId: opts.actorId })
+      : null;
+    return { ...(await this.recomputeStatus(id)), creditNote };
   }
 
   async markSponsored(id: string, sponsored: boolean) {
@@ -579,11 +595,20 @@ export class InvoicesService {
     return this.recomputeStatus(id);
   }
 
-  async cancel(id: string) {
+  /** Cancel before any payment. An issued (tax) invoice is credited in full by a credit note; a draft needs none. */
+  async cancel(id: string, actorId?: string) {
     const inv = await this.findOne(id);
     if (Number(inv.amountPaid) > 0) throw new BadRequestException('Cannot cancel an invoice with payments — refund first');
+    if (inv.status === InvoiceStatus.CANCELLED) throw new BadRequestException('This invoice is already cancelled');
+    const wasIssued = inv.status !== InvoiceStatus.DRAFT;
     await this.invoices.update(id, { status: InvoiceStatus.CANCELLED });
-    return this.findOne(id);
+    // Credit what hasn't been credited yet, so all credit notes together never exceed the invoice.
+    const credited = (await this.creditNotes.forInvoice(id)).reduce((s, n) => s + Number(n.total), 0);
+    const open = money(Number(inv.total) - credited);
+    const creditNote = wasIssued
+      ? await this.creditNotes.issue({ invoiceId: id, kind: CreditNoteKind.CANCELLATION, amount: open, reason: 'Invoice cancelled', actorId })
+      : null;
+    return { ...(await this.findOne(id)), creditNote };
   }
 
   // -------------------------------------------------------------- reporting

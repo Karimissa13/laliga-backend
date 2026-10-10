@@ -153,6 +153,13 @@ export enum CommunicationStatus {
 
 export enum WalletTxnType { CREDIT = 'CREDIT', DEBIT = 'DEBIT' }
 
+/** Why a tax credit note was issued against an invoice. */
+export enum CreditNoteKind {
+  REFUND = 'REFUND',             // money paid back (bank or wallet)
+  WRITE_OFF = 'WRITE_OFF',       // amount forgiven (write-off or instalment waiver) — not a bad debt
+  CANCELLATION = 'CANCELLATION', // an issued invoice cancelled in full
+}
+
 /** Where a line's money is reported on the finance dashboard. */
 export enum RevenueStream {
   ACADEMY = 'ACADEMY',                 // term fees
