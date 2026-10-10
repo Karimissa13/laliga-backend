@@ -9,6 +9,7 @@ import {
 import { allPermissionKeys, DEFAULT_ROLES, MODULE_ACTIONS } from '../rbac/permissions.catalog';
 import { livePasswordProblem } from '../config/live-passwords';
 import { assertVercelLiveMode } from '../config/vercel-guard';
+import { claimDatabaseRole, deploymentRole } from '../config/database-role';
 import { applyOwnerPasswordReset } from './owner-password-reset';
 
 dotenv.config();
@@ -31,6 +32,9 @@ async function run() {
   assertVercelLiveMode();
   const ds = await AppDataSource.initialize();
   console.log('DB connected. Seeding…');
+  // Live and demo deployments each mark their database; the other kind refuses it (database-role.ts).
+  const role = deploymentRole();
+  if (role) { await claimDatabaseRole(ds, role); console.log(`  database: ${role}`); }
 
   // 1) Permissions ----------------------------------------------------------
   const permRepo = ds.getRepository(Permission);

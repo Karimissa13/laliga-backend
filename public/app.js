@@ -4501,6 +4501,13 @@ async function boot(){
 }
 
 (async () => {
+  // The demo site says so on every screen (sign-in included), so it is never mistaken for the live system.
+  fetch(API + '/health').then((r) => r.json()).then((h) => {
+    if (h.mode !== 'demo' || document.getElementById('demo-ribbon')) return;
+    const d = document.createElement('div'); d.id = 'demo-ribbon'; d.className = 'demo-ribbon'; d.setAttribute('role', 'note');
+    d.textContent = 'DEMO · test data — not the live academy system'; document.body.appendChild(d);
+    document.title = 'DEMO — ' + document.title;
+  }).catch(() => {});
   try{ const t = sessionStorage.getItem('ll-token'); if(t){ TOKEN=t; REFRESH=sessionStorage.getItem('ll-refresh'); await boot(); } }
   catch{ endSession('Your session has ended. Please sign in again.'); }
 })();

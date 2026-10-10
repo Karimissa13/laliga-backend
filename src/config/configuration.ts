@@ -4,7 +4,8 @@ import { assertVercelLiveMode } from './vercel-guard';
 /** The live system (LALIGA_LIVE=true) never starts with the development signing keys. */
 function liveSecretsCheck() {
   assertVercelLiveMode();
-  if (process.env.LALIGA_LIVE !== 'true') return;
+  // The demo site is on the internet too (behind the Vercel login wall): it needs real signing keys as well.
+  if (process.env.LALIGA_LIVE !== 'true' && process.env.LALIGA_DEMO !== 'true') return;
   const a = process.env.JWT_ACCESS_SECRET || '', r = process.env.JWT_REFRESH_SECRET || '';
   // Say which rule failed (lengths only, never the values) so the setting can be fixed first time.
   const why = [

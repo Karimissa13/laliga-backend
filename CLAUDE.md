@@ -61,7 +61,7 @@ Run the e2e suite on a **fresh, seeded** database (some suites assume the seed's
 | Trials & leads, website pop-up endpoint | `src/modules/registration/leads.controller.ts` → `POST /api/v1/public/trial-requests` |
 | Inventory (one practice item LL-TEST-M; super-admin "Start again") | `src/modules/inventory/` |
 | Legacy import toolkit (CSV) | `src/migration/import-legacy.ts` (`npm run migrate -- --dir ./legacy-export`, dry run by default) |
-| Live deploy (Vercel + Neon) | `vercel.json`, `api/index.js` → `src/serverless.ts`, `npm run vercel-build`, `src/database/migrate.ts` |
+| Live deploy (Vercel + Neon) | `vercel.json`, `api/index.js` → `src/serverless.ts`, `npm run build:vercel`, `src/database/migrate.ts` |
 
 History of every build and decision: `PROGRESS.md`. The Claude Project "LaLiga Backend Enhancement" holds one doc
 per build and the go-live plan ("LaLiga — go-live and Term 2 cutover plan").

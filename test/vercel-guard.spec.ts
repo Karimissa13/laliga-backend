@@ -47,7 +47,13 @@ describe('vercelLiveModeProblem', () => {
     expect(vercelLiveModeProblem({ VERCEL: '1', LALIGA_LIVE: 'TRUE' } as any)).toMatch(/LALIGA_LIVE=true/);
   });
 
-  it('allows Vercel in live mode', () => {
+  it('allows Vercel in live mode, or as the demo site', () => {
     expect(vercelLiveModeProblem({ VERCEL: '1', LALIGA_LIVE: 'true' } as any)).toBeNull();
+    expect(vercelLiveModeProblem({ VERCEL: '1', LALIGA_DEMO: 'true' } as any)).toBeNull();
+  });
+
+  it('refuses live and demo at the same time, anywhere', () => {
+    expect(vercelLiveModeProblem({ VERCEL: '1', LALIGA_LIVE: 'true', LALIGA_DEMO: 'true' } as any)).toMatch(/both/);
+    expect(() => assertVercelLiveMode({ LALIGA_LIVE: 'true', LALIGA_DEMO: 'true' } as any)).toThrow(/both/);
   });
 });
