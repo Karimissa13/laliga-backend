@@ -12,8 +12,8 @@ import { Audit } from '../../common/decorators/audit.decorator';
 import { AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { FinanceReportsService } from '../finance/finance-reports.service';
 import { InventoryService } from './inventory.service';
+import { boolParam, numParam } from '../../common/query-params';
 
-const bool = ({ value }: { value: any }) => (value === undefined || value === '' ? undefined : value === true || value === 'true');
 
 class SizeDto {
   @ApiPropertyOptional({ example: 'M' }) @IsOptional() @IsString() @MaxLength(20) size?: string;
@@ -65,7 +65,7 @@ export class ItemQueryDto {
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(60) category?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(80) search?: string;
   @ApiPropertyOptional({ enum: ['OK', 'LOW', 'OUT'] }) @IsOptional() @IsIn(['OK', 'LOW', 'OUT']) status?: 'OK' | 'LOW' | 'OUT';
-  @ApiPropertyOptional() @IsOptional() @Transform(bool) @IsBoolean() includeInactive?: boolean;
+  @ApiPropertyOptional() @IsOptional() @Transform(boolParam) @IsBoolean() includeInactive?: boolean;
 }
 export class MovementQueryDto {
   @ApiPropertyOptional() @IsOptional() @IsDateString() from?: string;
@@ -74,7 +74,7 @@ export class MovementQueryDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID() itemId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(80) search?: string;
   @ApiPropertyOptional({ enum: InventoryProgramme }) @IsOptional() @IsEnum(InventoryProgramme) programme?: InventoryProgramme;
-  @ApiPropertyOptional({ default: 300 }) @IsOptional() @Transform(({ value }) => (value === '' || value == null ? undefined : Number(value))) @IsInt() @Min(1) @Max(2000) limit?: number;
+  @ApiPropertyOptional({ default: 300 }) @IsOptional() @Transform(numParam) @IsInt() @Min(1) @Max(2000) limit?: number;
 }
 
 @ApiTags('Inventory')

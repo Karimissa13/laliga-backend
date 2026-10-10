@@ -1,8 +1,8 @@
-import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { AllExceptionsFilter } from '../src/common/filters/http-exception.filter';
+import { configureApp } from '../src/app-setup';
 
 /**
  * Phases 3–6 e2e — Scheduling & Attendance, Finance, Communications, Analytics,
@@ -16,11 +16,7 @@ describe('LaLiga Backend (e2e) — Phases 3–6', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
-    app.useGlobalFilters(new AllExceptionsFilter());
+    app = configureApp(moduleRef.createNestApplication({ bodyParser: false }));
     await app.init();
     http = app.getHttpServer();
     const r = await request(http).post('/api/v1/auth/login')

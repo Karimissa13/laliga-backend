@@ -1,8 +1,8 @@
-import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { AllExceptionsFilter } from '../src/common/filters/http-exception.filter';
+import { configureApp } from '../src/app-setup';
 
 /**
  * The 2026/27 price list (VAT inclusive), term options, optional extras, the
@@ -27,8 +27,7 @@ describe('Price list, term options and extras (e2e)', () => {
 
   const family = async (tag: string) => (await request(http).post('/api/v1/guardians').set(auth()).send({
     fullName: `${tag} Pricing ${uniq}`, email: `${tag.toLowerCase()}.p${uniq}@example.com`,
-    mobile: `+97155${String(uniq).slice(-6)}${tag.length}`,
-  }).expect(201)).body;
+    mobile: `+97155${String(uniq).slice(-6)}${tag.length}` }).expect(201)).body;
   const child = async (guardianId: string, firstName: string, dob: string) =>
     (await request(http).post('/api/v1/players').set(auth()).send({
       guardianId, firstName, lastName: `Price${uniq}`, dateOfBirth: dob, gender: 'MALE',
@@ -36,11 +35,7 @@ describe('Price list, term options and extras (e2e)', () => {
 
   beforeAll(async () => {
     const m = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = m.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
-    app.useGlobalFilters(new AllExceptionsFilter());
+    app = configureApp(m.createNestApplication({ bodyParser: false }));
     await app.init();
     http = app.getHttpServer();
     token = (await request(http).post('/api/v1/auth/login')

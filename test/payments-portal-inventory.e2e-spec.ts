@@ -1,8 +1,8 @@
-import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { AllExceptionsFilter } from '../src/common/filters/http-exception.filter';
+import { configureApp } from '../src/app-setup';
 import { MailerService, MailMessage } from '../src/modules/notifications/mailer.service';
 
 /**
@@ -20,19 +20,14 @@ describe('Payment report, invoice email, parent portal, inventory (e2e)', () => 
   const mailer = {
     live: true,
     status: () => ({ connected: true, host: 'test', from: 'test@example.com' }),
-    send: async (m: MailMessage) => { sent.push(m); return { ok: true, simulated: false, messageId: `t-${sent.length}` }; },
-  };
+    send: async (m: MailMessage) => { sent.push(m); return { ok: true, simulated: false, messageId: `t-${sent.length}` }; } };
   let teams: any[];
   let g: any, child: any, invoice: any, network: any;
   let otherInvoiceId: string;
 
   beforeAll(async () => {
     const m = await Test.createTestingModule({ imports: [AppModule] }).overrideProvider(MailerService).useValue(mailer).compile();
-    app = m.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
-    app.useGlobalFilters(new AllExceptionsFilter());
+    app = configureApp(m.createNestApplication({ bodyParser: false }));
     await app.init();
     http = app.getHttpServer();
     token = (await request(http).post('/api/v1/auth/login')

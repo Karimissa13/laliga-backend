@@ -41,7 +41,9 @@ import { InvoiceBulkModule } from './modules/invoice-bulk/invoice-bulk.module';
     // Serve the admin UI (public/) at the root; API stays under /api.
     ServeStaticModule.forRoot({
       rootPath: join(process.cwd(), 'public'),
-      exclude: ['/api/{*splat}'],
+      // @nestjs/serve-static 4 matches with path-to-regexp 0.x: "/api/(.*)" (the newer "{*splat}"
+      // syntax never matched, so unknown /api/... addresses answered with the admin page instead of 404).
+      exclude: ['/api/(.*)'],
     }),
     JwtModule.register({ global: true }),
     DatabaseModule,

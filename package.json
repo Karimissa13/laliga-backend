@@ -19,7 +19,8 @@
     "test:fixtures": "ts-node -r tsconfig-paths/register test/fixtures/demo-fixtures.ts",
     "db:migrate": "node dist/database/migrate.js",
     "db:migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/database/data-source.ts",
-    "build:vercel": "nest build && node dist/database/migrate.js && node dist/database/seed.js && node dist/database/seed-academy.js && node dist/database/demo-data.js",
+    "release": "node dist/database/migrate.js && node dist/database/seed.js && node dist/database/seed-academy.js && node dist/database/demo-data.js",
+    "build:vercel": "nest build && npm run release",
     "db:migration:check": "typeorm-ts-node-commonjs migration:generate src/database/migrations/Pending -d src/database/data-source.ts --check"
   },
   "devDependencies": {

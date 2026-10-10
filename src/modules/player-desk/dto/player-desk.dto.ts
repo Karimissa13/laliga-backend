@@ -8,11 +8,8 @@ import { MANUAL_PRESET_CODES } from '../../finance/manual-discounts';
 import { TeamLevel, TermPackage } from '../../../database/entities';
 import { ExtraItemDto } from '../../finance/dto/pricing.dto';
 import { InstalmentItemDto } from '../../finance/dto/finance.dto';
-
-/** Query strings carry lists as "a,b,c". */
-const csv = ({ value }: { value: any }) =>
-  value == null || value === '' ? undefined : Array.isArray(value) ? value : String(value).split(',').filter(Boolean);
-const int = ({ value }: { value: any }) => (value == null || value === '' ? undefined : Number(value));
+// Query strings carry lists as "a,b,c" (listParam) and numbers as text (numParam).
+import { listParam, numParam } from '../../../common/query-params';
 
 export class ManualDiscountDto {
   @ApiPropertyOptional({ enum: MANUAL_PRESET_CODES, description: 'Percentage off the training fee: early bird 10%, 10%, 15%, 25%, 50% or sponsored 100%' })
@@ -73,15 +70,15 @@ export class GuardianLookupDto {
 }
 
 export class QuoteQueryDto {
-  @ApiPropertyOptional({ description: 'Any percentage off the training fee instead of a preset' }) @IsOptional() @Transform(int) @IsNumber() @Min(0.01) @Max(100) manualPercent?: number;
+  @ApiPropertyOptional({ description: 'Any percentage off the training fee instead of a preset' }) @IsOptional() @Transform(numParam) @IsNumber() @Min(0.01) @Max(100) manualPercent?: number;
   @ApiPropertyOptional({ example: '2026-10-12', description: 'First training day, when after the term starts — the training fee is prorated by sessions left' })
   @IsOptional() @IsDateString() startDate?: string;
   @ApiPropertyOptional({ enum: MANUAL_PRESET_CODES, description: 'Price with a manual discount instead of the sibling discount' }) @IsOptional() @IsIn(MANUAL_PRESET_CODES) manualPreset?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() termId?: string;
   @ApiPropertyOptional({ enum: TermPackage }) @IsOptional() @IsEnum(TermPackage) package?: TermPackage;
   @ApiPropertyOptional() @IsOptional() @IsUUID() teamId?: string;
-  @ApiPropertyOptional() @IsOptional() @Transform(int) @IsInt() @Min(1) @Max(3) sessionsPerWeek?: number;
-  @ApiPropertyOptional({ description: 'Comma-separated product ids' }) @IsOptional() @Transform(csv) @IsArray() @IsUUID('4', { each: true }) productIds?: string[];
+  @ApiPropertyOptional() @IsOptional() @Transform(numParam) @IsInt() @Min(1) @Max(3) sessionsPerWeek?: number;
+  @ApiPropertyOptional({ description: 'Comma-separated product ids' }) @IsOptional() @Transform(listParam) @IsArray() @IsUUID('4', { each: true }) productIds?: string[];
 }
 
 export class RegistrationOptionsDto {
@@ -104,7 +101,7 @@ export class AssignCoachDto {
 }
 
 export class NewChildQuoteDto {
-  @ApiPropertyOptional({ description: 'Any percentage off the training fee instead of a preset' }) @IsOptional() @Transform(int) @IsNumber() @Min(0.01) @Max(100) manualPercent?: number;
+  @ApiPropertyOptional({ description: 'Any percentage off the training fee instead of a preset' }) @IsOptional() @Transform(numParam) @IsNumber() @Min(0.01) @Max(100) manualPercent?: number;
   @ApiPropertyOptional({ example: '2026-10-12', description: 'First training day, when after the term starts — the training fee is prorated by sessions left' })
   @IsOptional() @IsDateString() startDate?: string;
   @ApiPropertyOptional({ enum: MANUAL_PRESET_CODES, description: 'Price with a manual discount instead of the sibling discount' }) @IsOptional() @IsIn(MANUAL_PRESET_CODES) manualPreset?: string;
@@ -114,8 +111,8 @@ export class NewChildQuoteDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID() termId?: string;
   @ApiPropertyOptional({ enum: TermPackage }) @IsOptional() @IsEnum(TermPackage) package?: TermPackage;
   @ApiPropertyOptional() @IsOptional() @IsUUID() teamId?: string;
-  @ApiPropertyOptional() @IsOptional() @Transform(int) @IsInt() @Min(1) @Max(3) sessionsPerWeek?: number;
-  @ApiPropertyOptional({ description: 'Comma-separated product ids' }) @IsOptional() @Transform(csv) @IsArray() @IsUUID('4', { each: true }) productIds?: string[];
+  @ApiPropertyOptional() @IsOptional() @Transform(numParam) @IsInt() @Min(1) @Max(3) sessionsPerWeek?: number;
+  @ApiPropertyOptional({ description: 'Comma-separated product ids' }) @IsOptional() @Transform(listParam) @IsArray() @IsUUID('4', { each: true }) productIds?: string[];
   @ApiPropertyOptional() @IsOptional() @IsString() firstName?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() lastName?: string;
 }

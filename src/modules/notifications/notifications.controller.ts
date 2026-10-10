@@ -6,6 +6,7 @@ import { RequirePermissions } from '../../common/decorators/permissions.decorato
 import { Audit } from '../../common/decorators/audit.decorator';
 import { AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { NotificationsService } from './notifications.service';
+import { numParam } from '../../common/query-params';
 
 export class EmailInvoiceDto {
   @ApiPropertyOptional({ description: 'Send to a different address this once (defaults to the parent)' })
@@ -15,7 +16,7 @@ const EMAIL_KINDS = ['welcome', 'registered', 'invoice', 'report', 'payment_link
 export class EmailLogQueryDto {
   @ApiPropertyOptional({ enum: EMAIL_KINDS }) @IsOptional() @IsIn(EMAIL_KINDS) kind?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() guardianId?: string;
-  @ApiPropertyOptional({ default: 100 }) @IsOptional() @Transform(({ value }) => (value === '' || value == null ? undefined : Number(value)))
+  @ApiPropertyOptional({ default: 100 }) @IsOptional() @Transform(numParam)
   @IsInt() @Min(1) @Max(500) limit?: number;
 }
 

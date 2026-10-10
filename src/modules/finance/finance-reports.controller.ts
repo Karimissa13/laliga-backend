@@ -14,11 +14,8 @@ import { FinanceReportsService, INVOICE_SORT, InvoiceSortKey, METHOD_LABEL } fro
 import { InvoicePdfService } from './invoice-pdf.service';
 import { MerchantsService } from './merchants.service';
 import { InvoiceProfile, NotificationSettings, SettingsService } from './settings.service';
+import { boolParam, listParam, numParam } from '../../common/query-params';
 
-const bool = ({ value }: { value: any }) => (value === undefined || value === '' ? undefined : value === true || value === 'true');
-const num = ({ value }: { value: any }) => (value === undefined || value === '' ? undefined : Number(value));
-const ids = ({ value }: { value: any }) => (value === undefined || value === ''
-  ? undefined : (Array.isArray(value) ? value : String(value).split(',')).map((s: string) => s.trim()).filter(Boolean));
 
 export class PaymentReportQueryDto {
   @ApiPropertyOptional({ example: '2026-10-01' }) @IsOptional() @IsDateString() from?: string;
@@ -29,7 +26,7 @@ export class PaymentReportQueryDto {
   @ApiPropertyOptional({ description: 'Invoice, player or parent number, name or payment reference' })
   @IsOptional() @IsString() @MaxLength(100) search?: string;
   @ApiPropertyOptional({ default: true, description: 'Include wallet applications as rows' })
-  @IsOptional() @Transform(bool) @IsBoolean() includeWallet?: boolean;
+  @IsOptional() @Transform(boolParam) @IsBoolean() includeWallet?: boolean;
 }
 
 export class InvoiceRegisterQueryDto {
@@ -49,20 +46,20 @@ export class InvoiceRegisterQueryDto {
   @ApiPropertyOptional() @IsOptional() @IsDateString() invoiceTo?: string;
   @ApiPropertyOptional() @IsOptional() @IsDateString() paymentFrom?: string;
   @ApiPropertyOptional() @IsOptional() @IsDateString() paymentTo?: string;
-  @ApiPropertyOptional() @IsOptional() @Transform(num) @IsNumber() amountFrom?: number;
-  @ApiPropertyOptional() @IsOptional() @Transform(num) @IsNumber() amountTo?: number;
+  @ApiPropertyOptional() @IsOptional() @Transform(numParam) @IsNumber() amountFrom?: number;
+  @ApiPropertyOptional() @IsOptional() @Transform(numParam) @IsNumber() amountTo?: number;
   @ApiPropertyOptional({ description: 'Still owed: issued or part paid, with a balance' })
-  @IsOptional() @Transform(bool) @IsBoolean() open?: boolean;
+  @IsOptional() @Transform(boolParam) @IsBoolean() open?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsDateString() dueFrom?: string;
   @ApiPropertyOptional() @IsOptional() @IsDateString() dueTo?: string;
   @ApiPropertyOptional({ description: 'Only invoices with an instalment plan' })
-  @IsOptional() @Transform(bool) @IsBoolean() hasPlan?: boolean;
+  @IsOptional() @Transform(boolParam) @IsBoolean() hasPlan?: boolean;
   @ApiPropertyOptional({ description: 'Comma-separated invoice ids (export a selection)' })
-  @IsOptional() @Transform(ids) @IsArray() @ArrayMaxSize(2000) @IsUUID('all', { each: true }) ids?: string[];
+  @IsOptional() @Transform(listParam) @IsArray() @ArrayMaxSize(2000) @IsUUID('all', { each: true }) ids?: string[];
   @ApiPropertyOptional({ enum: Object.keys(INVOICE_SORT) }) @IsOptional() @IsIn(Object.keys(INVOICE_SORT)) sort?: InvoiceSortKey;
   @ApiPropertyOptional({ enum: ['asc', 'desc'] }) @IsOptional() @IsIn(['asc', 'desc']) dir?: 'asc' | 'desc';
-  @ApiPropertyOptional({ default: 1 }) @IsOptional() @Transform(num) @IsInt() @Min(1) page?: number;
-  @ApiPropertyOptional({ default: 50 }) @IsOptional() @Transform(num) @IsInt() @Min(1) @Max(200) limit?: number;
+  @ApiPropertyOptional({ default: 1 }) @IsOptional() @Transform(numParam) @IsInt() @Min(1) page?: number;
+  @ApiPropertyOptional({ default: 50 }) @IsOptional() @Transform(numParam) @IsInt() @Min(1) @Max(200) limit?: number;
 }
 
 export class CreditNoteQueryDto {

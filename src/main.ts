@@ -1,65 +1,34 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import helmet from 'helmet';
-import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
-import { AllExceptionsFilter } from './common/filters/http-exception.filter';
+import { configureApp } from './app-setup';
 
+/**
+ * Long-running server: Docker, a Node host behind nginx, or local development.
+ * (Vercel uses serverless.ts; both share configureApp.) Before starting it on a
+ * live database, run `npm run release` (migrations, then setup) — the Docker
+ * entrypoint does that itself.
+ */
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: false });
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  configureApp(app);
 
-  // Security headers (HSTS/CSP/etc.) — one of the audit's flagged gaps.
-  // scriptSrc stays locked to 'self' (no unsafe-inline): the admin UI ships its
-  // JS as a file and dispatches actions through event delegation.
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        // inline style attributes are used for data-driven widths (bars/meters)
-        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-        fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
-        imgSrc: ["'self'", 'data:'],
-        connectSrc: ["'self'"],
-        objectSrc: ["'none'"],
-        frameAncestors: ["'none'"],
-        baseUri: ["'self'"],
-        formAction: ["'self'"],
-      },
-    },
-    crossOriginEmbedderPolicy: false,
-  }));
-  app.enableCors({ origin: true, credentials: true });
-  // Room for a player's photo on the Advanced report (resized in the browser first).
-  app.use(json({ limit: '1mb' }));
-  app.use(urlencoded({ extended: true, limit: '1mb' }));
-
-  // Global API prefix + URI versioning: /api/v1/...
-  app.setGlobalPrefix('api');
-  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    transform: true,
-    transformOptions: { enableImplicitConversion: true },
-  }));
-  app.useGlobalFilters(new AllExceptionsFilter());
-
-  const config = new DocumentBuilder()
-    .setTitle('LaLiga Academy — Operations Backend API')
-    .setDescription('Administration & operations backend. Phase 1: Auth, RBAC, People, Dashboard.')
-    .setVersion('0.1.0')
-    .addBearerAuth()
-    .build();
-  const doc = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, doc);
+  // API explorer: on by default for local work; on the live system only with API_DOCS=true.
+  const docs = process.env.API_DOCS ? process.env.API_DOCS === 'true' : process.env.LALIGA_LIVE !== 'true';
+  if (docs) {
+    const config = new DocumentBuilder()
+      .setTitle('LaLiga Academy — Operations Backend API')
+      .setDescription('Administration & operations backend for LaLiga Academy Abu Dhabi.')
+      .setVersion('0.1.0')
+      .addBearerAuth()
+      .build();
+    SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
+  }
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
   // eslint-disable-next-line no-console
-  console.log(`LaLiga backend running on http://localhost:${port} (docs at /api/docs)`);
+  console.log(`LaLiga backend running on http://localhost:${port}${docs ? ' (docs at /api/docs)' : ''}`);
 }
 bootstrap();

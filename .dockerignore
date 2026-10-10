@@ -3,3 +3,8 @@ dist
 .git
 *.log
 .env
+.vercel
+.env.local
+laliga-mail.env
+.claude
+coverage

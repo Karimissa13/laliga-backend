@@ -1,8 +1,8 @@
-import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { AllExceptionsFilter } from '../src/common/filters/http-exception.filter';
+import { configureApp } from '../src/app-setup';
 
 /**
  * Late-sibling credits (policy confirmed Oct 2026).
@@ -25,8 +25,7 @@ describe('Late-sibling credits (e2e)', () => {
 
   const family = async (tag: string) => (await request(http).post('/api/v1/guardians').set(auth()).send({
     fullName: `${tag} Family ${uniq}`, email: `${tag.toLowerCase()}${uniq}@example.com`,
-    mobile: `+97156${String(uniq).slice(-6)}${tag.length}`,
-  }).expect(201)).body;
+    mobile: `+97156${String(uniq).slice(-6)}${tag.length}` }).expect(201)).body;
   const child = async (guardianId: string, firstName: string, dob: string) =>
     (await request(http).post('/api/v1/players').set(auth()).send({
       guardianId, firstName, lastName: `Credit${uniq}`, dateOfBirth: dob, gender: 'MALE',
@@ -39,11 +38,7 @@ describe('Late-sibling credits (e2e)', () => {
 
   beforeAll(async () => {
     const m = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = m.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
-    app.useGlobalFilters(new AllExceptionsFilter());
+    app = configureApp(m.createNestApplication({ bodyParser: false }));
     await app.init();
     http = app.getHttpServer();
     token = (await request(http).post('/api/v1/auth/login')

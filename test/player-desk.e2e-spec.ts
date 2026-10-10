@@ -1,8 +1,8 @@
-import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { AllExceptionsFilter } from '../src/common/filters/http-exception.filter';
+import { configureApp } from '../src/app-setup';
 
 /**
  * Players section (Oct 2026): directory filters, the player page actions, and the
@@ -27,11 +27,7 @@ describe('Players section (e2e)', () => {
 
   beforeAll(async () => {
     const m = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = m.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
-    app.useGlobalFilters(new AllExceptionsFilter());
+    app = configureApp(m.createNestApplication({ bodyParser: false }));
     await app.init();
     http = app.getHttpServer();
     token = (await request(http).post('/api/v1/auth/login')
@@ -91,8 +87,7 @@ describe('Players section (e2e)', () => {
     it('creates a family and finds it again by phone, however it is typed', async () => {
       const tail = String(uniq).slice(-7);
       const g = await request(http).post('/api/v1/guardians').set(auth()).send({
-        fullName: `Desk Family ${uniq}`, email: `desk${uniq}@example.com`, mobile: `+97155${tail}`,
-      }).expect(201);
+        fullName: `Desk Family ${uniq}`, email: `desk${uniq}@example.com`, mobile: `+97155${tail}` }).expect(201);
       guardianId = g.body.id; guardianRef = g.body.reference;
       const hits = (await request(http)
         .get(`/api/v1/registration/guardian-lookup?q=${encodeURIComponent('055 ' + tail)}`).set(auth())).body;

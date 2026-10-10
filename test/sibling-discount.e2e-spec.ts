@@ -1,8 +1,8 @@
-import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { AllExceptionsFilter } from '../src/common/filters/http-exception.filter';
+import { configureApp } from '../src/app-setup';
 
 /**
  * Sibling-discount policy, end to end.
@@ -31,11 +31,7 @@ describe('Sibling discount (e2e)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
-    app.useGlobalFilters(new AllExceptionsFilter());
+    app = configureApp(moduleRef.createNestApplication({ bodyParser: false }));
     await app.init();
     http = app.getHttpServer();
     const res = await request(http).post('/api/v1/auth/login')
@@ -62,8 +58,7 @@ describe('Sibling discount (e2e)', () => {
     const g = await request(http).post('/api/v1/guardians').set(auth()).send({
       fullName: `Ladder Family ${uniq}`,
       email: `ladder${uniq}@example.com`,
-      mobile: '+971500009001',
-    }).expect(201);
+      mobile: '+971500009001' }).expect(201);
     guardianId = g.body.id;
 
     // Deliberately created out of birth order to prove ordering is by date of

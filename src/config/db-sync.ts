@@ -15,6 +15,9 @@
  * a cold start must never alter a live schema.
  */
 export function shouldSynchronize(env: NodeJS.ProcessEnv = process.env): boolean {
+  // The live system and the demo change their schema only through reviewed migrations
+  // (`npm run release`) — on any host, whatever DB_SYNCHRONIZE says.
+  if (env.LALIGA_LIVE === 'true' || env.LALIGA_DEMO === 'true') return false;
   const explicit = env.DB_SYNCHRONIZE;
   if (explicit !== undefined && explicit !== '') return explicit === 'true';
   return env.NODE_ENV !== 'production';

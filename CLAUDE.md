@@ -61,26 +61,29 @@ Run the e2e suite on a **fresh, seeded** database (some suites assume the seed's
 | Trials & leads, website pop-up endpoint | `src/modules/registration/leads.controller.ts` → `POST /api/v1/public/trial-requests` |
 | Inventory (one practice item LL-TEST-M; super-admin "Start again") | `src/modules/inventory/` |
 | Legacy import toolkit (CSV) | `src/migration/import-legacy.ts` (`npm run migrate -- --dir ./legacy-export`, dry run by default) |
-| Live deploy (Vercel + Neon) | `vercel.json`, `api/index.js` → `src/serverless.ts`, `npm run build:vercel`, `src/database/migrate.ts` |
+| Live deploy (any host) | `DEPLOY.md`; `src/app-setup.ts` (shared by `src/main.ts` and `src/serverless.ts`), `npm run release`, `vercel.json`, `Dockerfile` |
+| Tax credit notes | `src/modules/finance/credit-notes.service.ts`, `invoice-pdf.service.ts` (`renderCreditNote`) |
+| Invoice list (sort, quick filters, bulk) | `finance-reports.service.ts` (`INVOICE_SORT`), `src/modules/invoice-bulk/` |
+| Query-string converters | `src/common/query-params.ts` — use these in DTOs, never `({ value }) => …` (implicit conversion runs first) |
 
 History of every build and decision: `PROGRESS.md`. The Claude Project "LaLiga Backend Enhancement" holds one doc
 per build and the go-live plan ("LaLiga — go-live and Term 2 cutover plan").
 
-## Where we stopped (8 Oct 2026, build 14)
-Done in build 14: inventory reset + one practice item; baseline migration and `migrate.ts`; live mode
-(`LALIGA_LIVE`); Vercel entry compiled by `nest build` (`src/serverless.ts`); security headers in `vercel.json`;
-live-secrets check. All tests green on a migration-built DB.
+## Where we stopped (10 Oct 2026, Claude Code)
+**Stage 1 is live** on Vercel (`laliga-backend`, Hobby, fra1) + Neon (`laliga-academy`, Frankfurt, PostgreSQL 18), see
+DEPLOY.md. The live database is marked `live` (`app_settings.databaseRole`); a demo deploy refuses it. Karim's account
+works; no password settings remain in Vercel. Since build 14: session renewal in the admin UI, credit notes, invoice
+list enhancements, live-mode guards, Vercel request fixes, host-independent set-up (Docker image tested in live mode).
 
-Decisions (Karim, 8 Oct): go live in stages (admin online first, then the public homepage); the new system takes
-over at **Term 2** — freeze the old admin ~14 Dec, import, reconcile, start Term 2 (4 Jan 2027) on the new system;
-old data comes as a **MySQL dump from the old host**; hosting = **Vercel + Neon** (Frankfurt).
+Decisions (Karim): go live in stages (admin online first, then the public homepage); the new system takes over at
+**Term 2** — freeze the old admin ~14 Dec, import, reconcile, start Term 2 (4 Jan 2027) on the new system; old data
+comes as a **MySQL dump from the old host**; hosting = **Vercel + Neon** (Frankfurt), movable to another host on the
+same database (DEPLOY.md §5). Neon Free + Vercel Hobby until the import, then paid plans. Email: later. No demo site
+(9–10 Oct: Karim tests on live; the `laliga-demo` Vercel project is unlinked from GitHub and the Neon `demo` branch
+can be deleted by Karim).
 
 ## Next, in order
-1. **Stage 1 deploy with Karim** (he clicks; walk him through): GitHub private repo → Neon project (Frankfurt) →
-   Vercel import with the Neon integration → env vars (`LALIGA_LIVE=true`, `NODE_ENV=production`,
-   `DB_SYNCHRONIZE=false`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `SEED_OWNER_PASSWORD`, `PORTAL_URL`, `MAIL_*`,
-   later `CORS_ORIGINS`) → first deploy → domain `app.laligaacademyabudhabi.com`. Then rewrite `DEPLOY-VERCEL.md`
-   to match (it still describes the old manual-seed flow).
+1. **Finish Stage 1:** GoDaddy CNAME for `app.laligaacademyabudhabi.com` (after Karim's testing); mailbox (`MAIL_*`).
 2. **Serverless gaps:** the website pop-up rate limiter is in memory (per instance) — move it to the DB; the
    automation scheduler can't run on Vercel — add Vercel Cron calling a protected endpoint (keep automations off
    until Karim enables them).
@@ -95,6 +98,7 @@ old data comes as a **MySQL dump from the old host**; hosting = **Vercel + Neon*
 6. Still open from earlier builds: import of the trials-sheet rows and old leads; the Advanced-teams tab; kit/league
    VAT question (367.50/577.50/620 vs 350/550/600); reCAPTCHA on the pop-up; goalkeeper items of the Advanced
    report to confirm with coaches; old evaluation PDFs not imported; staff 2FA and login rate limiting.
+7. To confirm with the academy's accountant: credit-note wording; write-off vs bad-debt rule (credit note or not).
 
 ## Known security findings to keep in mind
 - Old live site: invoice PDFs are public at guessable URLs (`/public/storage/invoices/INVAB-<invoice><parent>.pdf`),

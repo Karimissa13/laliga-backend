@@ -1,11 +1,11 @@
 #!/bin/sh
 set -e
 
-echo "Waiting for PostgreSQL…"
+echo "Waiting for PostgreSQL..."
 tries=0
 until node -e "
 const {Client}=require('pg');
-const c=new Client({connectionString:process.env.DATABASE_URL});
+const c=new Client({connectionString:process.env.DATABASE_URL_UNPOOLED||process.env.DATABASE_URL});
 c.connect().then(()=>c.end()).catch(()=>process.exit(1));
 " 2>/dev/null; do
   tries=$((tries+1))
@@ -17,12 +17,19 @@ c.connect().then(()=>c.end()).catch(()=>process.exit(1));
 done
 echo "PostgreSQL is up."
 
-# Schema + seed on first run. Both seeders are idempotent: they skip what exists,
-# so this is safe on every restart. `set -e` aborts the boot if either fails
-# rather than starting an API with no schema.
-echo "Seeding…"
-DB_SYNCHRONIZE=true node dist/database/seed.js
-DB_SYNCHRONIZE=true node dist/database/seed-academy.js
+if [ "$LALIGA_LIVE" = "true" ] || [ "$LALIGA_DEMO" = "true" ] || [ "$DB_SYNCHRONIZE" = "false" ]; then
+  # Live system / demo / any migration-managed database (e.g. the Neon database the
+  # Vercel deployment uses): exactly what every Vercel deploy runs — migrations, then
+  # the idempotent setup. The schema is never auto-synchronised here.
+  echo "Release: migrations, then setup..."
+  npm run release --silent
+else
+  # Local laptop setup (docker compose, DB_SYNCHRONIZE=true): schema from the entities
+  # on first boot, then the idempotent setup — unchanged, so existing local data keeps working.
+  echo "Local database: schema sync, then setup..."
+  DB_SYNCHRONIZE=true node dist/database/seed.js
+  DB_SYNCHRONIZE=true node dist/database/seed-academy.js
+fi
 
-echo "Starting API + admin UI on :3000"
+echo "Starting API + admin UI on :${PORT:-3000}"
 exec node dist/main.js

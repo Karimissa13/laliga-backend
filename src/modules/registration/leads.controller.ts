@@ -21,18 +21,17 @@ import { LEAD_STAGE_LABEL, LeadsService } from './leads.service';
 import { ConvertLeadDto } from './dto/registration.dto';
 import { DEFAULT_LEAD_OUTCOMES, DEFAULT_LEAD_TEMPLATES, LeadTemplate, fill, whatsappLink } from './lead-messages';
 import { TrialsService } from './trials.service';
+import { boolParam, emptyToUndefined, numParam } from '../../common/query-params';
 
-const num = ({ value }: { value: any }) => (value === undefined || value === '' ? undefined : Number(value));
-const empty = ({ value }: { value: any }) => (value === '' ? undefined : value);
 
 /** What the website's "Book a Free Trial" pop-up sends. */
 export class TrialRequestDto {
   @ApiProperty({ example: 'Sara Ahmed' }) @IsString() @MinLength(2) @MaxLength(120) guardianName: string;
-  @ApiPropertyOptional({ example: 'sara@example.com' }) @IsOptional() @Transform(empty) @IsEmail() guardianEmail?: string;
+  @ApiPropertyOptional({ example: 'sara@example.com' }) @IsOptional() @Transform(emptyToUndefined) @IsEmail() guardianEmail?: string;
   @ApiProperty({ example: 'Omar' }) @IsString() @MinLength(1) @MaxLength(160) playerName: string;
   @ApiProperty({ example: '+971501234567' }) @IsString() @MinLength(7) @MaxLength(25) guardianMobile: string;
   @ApiProperty({ example: '14/03/2015', description: 'DD/MM/YYYY or YYYY-MM-DD' }) @IsString() @MaxLength(12) playerDob: string;
-  @ApiPropertyOptional() @IsOptional() @Transform(({ value }) => (value === undefined ? undefined : value === true || ['true', 'on', '1', 'yes'].includes(String(value).toLowerCase()))) @IsBoolean() isGuardian?: boolean;
+  @ApiPropertyOptional() @IsOptional() @Transform(boolParam) @IsBoolean() isGuardian?: boolean;
   @ApiPropertyOptional({ description: 'Page or campaign the form was on' }) @IsOptional() @IsString() @MaxLength(200) sourceDetail?: string;
   /** Honeypot: hidden on the real form, so anything here is a bot. */
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(200) website?: string;
@@ -40,10 +39,10 @@ export class TrialRequestDto {
 
 export class StaffLeadDto {
   @ApiProperty() @IsString() @MinLength(2) @MaxLength(120) guardianName: string;
-  @ApiPropertyOptional() @IsOptional() @Transform(empty) @IsEmail() guardianEmail?: string;
+  @ApiPropertyOptional() @IsOptional() @Transform(emptyToUndefined) @IsEmail() guardianEmail?: string;
   @ApiProperty() @IsString() @MinLength(7) @MaxLength(25) guardianMobile: string;
   @ApiProperty() @IsString() @MinLength(1) @MaxLength(160) playerName: string;
-  @ApiPropertyOptional() @IsOptional() @Transform(empty) @IsString() @MaxLength(12) playerDob?: string;
+  @ApiPropertyOptional() @IsOptional() @Transform(emptyToUndefined) @IsString() @MaxLength(12) playerDob?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() ageGroupLabel?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() level?: string;
   @ApiPropertyOptional({ enum: LeadSource }) @IsOptional() @IsEnum(LeadSource) source?: LeadSource;
@@ -72,8 +71,8 @@ export class LeadListDto {
   @ApiPropertyOptional() @IsOptional() @IsDateString() trialFrom?: string;
   @ApiPropertyOptional() @IsOptional() @IsDateString() trialTo?: string;
   @ApiPropertyOptional({ enum: ['yes', 'no'] }) @IsOptional() @IsIn(['yes', 'no']) hasComments?: 'yes' | 'no';
-  @ApiPropertyOptional() @IsOptional() @Transform(num) @IsInt() @Min(1) page?: number;
-  @ApiPropertyOptional() @IsOptional() @Transform(num) @IsInt() @Min(1) @Max(200) limit?: number;
+  @ApiPropertyOptional() @IsOptional() @Transform(numParam) @IsInt() @Min(1) page?: number;
+  @ApiPropertyOptional() @IsOptional() @Transform(numParam) @IsInt() @Min(1) @Max(200) limit?: number;
 }
 export class LeadStatusDto {
   @ApiProperty({ enum: LeadStatus }) @IsEnum(LeadStatus) status: LeadStatus;

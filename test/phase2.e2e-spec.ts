@@ -1,8 +1,8 @@
-import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { AllExceptionsFilter } from '../src/common/filters/http-exception.filter';
+import { configureApp } from '../src/app-setup';
 
 /**
  * Phase 2 e2e — Registration & Trials, Teams & Coaches.
@@ -20,11 +20,7 @@ describe('LaLiga Backend (e2e) — Phase 2', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
-    app.useGlobalFilters(new AllExceptionsFilter());
+    app = configureApp(moduleRef.createNestApplication({ bodyParser: false }));
     await app.init();
     http = app.getHttpServer();
     const res = await request(http).post('/api/v1/auth/login')
@@ -54,8 +50,7 @@ describe('LaLiga Backend (e2e) — Phase 2', () => {
       .send({
         guardianName: 'E2E Fam', guardianEmail: `fam${uniq}@example.com`, guardianMobile: '+971500000001',
         firstName: 'Reg', lastName: 'One', gender: 'MALE', dateOfBirth: '2015-06-01',
-        termId, teamId,
-      }).expect(201);
+        termId, teamId }).expect(201);
     expect(res.body.guardian.reference).toMatch(/^PR-/);
     expect(res.body.player.reference).toMatch(/^PL-/);
     expect(res.body.waitlisted).toBe(false);

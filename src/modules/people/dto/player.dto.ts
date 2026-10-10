@@ -5,6 +5,7 @@ import {
 import { Transform } from 'class-transformer';
 import { Gender, PlayerStatus, TeamLevel } from '../../../database/entities';
 import { PaymentState } from '../../finance/payment-state';
+import { boolParam } from '../../../common/query-params';
 
 export class CreatePlayerDto {
   @ApiPropertyOptional({ default: true, description: 'Email the parent the welcome. Siblings registered together pass false for all but the last child, so the family gets one email.' })
@@ -77,5 +78,5 @@ export class PlayerFilterDto extends PaginationDto {
   @ApiPropertyOptional({ enum: PlayerStatus }) @IsOptional() @IsEnum(PlayerStatus) status?: PlayerStatus;
   @ApiPropertyOptional() @IsOptional() @IsUUID() guardianId?: string;
   @ApiPropertyOptional({ description: 'Include archived children' })
-  @IsOptional() @Transform(({ value }) => value === true || value === 'true') @IsBoolean() includeArchived?: boolean;
+  @IsOptional() @Transform(boolParam) @IsBoolean() includeArchived?: boolean;
 }
