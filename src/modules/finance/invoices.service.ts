@@ -1,7 +1,7 @@
 import { ManualDiscount, manualAmount, resolveManualDiscount } from './manual-discounts';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, DataSource, In, Repository } from 'typeorm';
+import { Brackets, DataSource, In, IsNull, Not, Repository } from 'typeorm';
 import {
   AppliedDiscount, DiscountRule, Enrolment, Fee, Guardian, Invoice, InvoiceLineItem,
   InvoiceStatus, InvoiceType, Payment, PaymentDirection, PaymentStatus, Player, Term,
@@ -11,6 +11,7 @@ import { PricingService } from './pricing.service';
 import { Proration, ProrationService } from './proration.service';
 import { amountsFor } from './instalments';
 import { PACKAGE_LABEL, defaultSessionsPerWeek, lineVat, splitIncl } from './pricing';
+import { dubaiToday, dubaiDatePlus } from '../../common/dubai-date';
 
 /** An item added to an invoice besides the term fee: a kit, the league, or a custom charge. */
 export interface ExtraItem {
@@ -139,8 +140,8 @@ export class InvoicesService {
       guardianId,
       type: input.type ?? InvoiceType.STANDARD,
       status: InvoiceStatus.DRAFT,
-      issueDate: new Date().toISOString().slice(0, 10),
-      dueDate: new Date(Date.now() + (input.dueInDays ?? 14) * 86400000).toISOString().slice(0, 10),
+      issueDate: dubaiToday(),
+      dueDate: dubaiDatePlus(input.dueInDays ?? 14),
       installments: input.installments ?? 1,
       notes: input.notes,
     }));
@@ -349,8 +350,8 @@ export class InvoicesService {
       guardianId: g.id,
       type: InvoiceType.ADDITIONAL,
       status: InvoiceStatus.DRAFT,
-      issueDate: new Date().toISOString().slice(0, 10),
-      dueDate: new Date(Date.now() + (input.dueInDays ?? 14) * 86400000).toISOString().slice(0, 10),
+      issueDate: dubaiToday(),
+      dueDate: dubaiDatePlus(input.dueInDays ?? 14),
       notes: input.notes,
     }));
     const x = await this.addExtraLines(invoice.id, g.id, input.items);
@@ -380,6 +381,9 @@ export class InvoicesService {
       throw new BadRequestException('This invoice already has a payment, write-off or sponsorship — adjust it before any money is recorded.');
     }
     const relations = { player: { guardian: true, ageGroup: true }, term: true, team: { location: true } } as const;
+    if (await this.enrolments.count({ where: { invoiceId: id, movedFromId: Not(IsNull()) } })) {
+      throw new BadRequestException('A child on this invoice has moved squad since — the move is priced on its own invoice, so this one can no longer be re-priced.');
+    }
     let enrolments = await this.enrolments.find({ where: { invoiceId: id }, relations });
     if (!enrolments.length) throw new BadRequestException('This invoice has no training fee to adjust.');
     const kids = new Set(enrolments.map((e) => e.playerId));
@@ -436,7 +440,7 @@ export class InvoicesService {
     }
     const invoiceLevel = (inv.discounts || []).filter((d) => !d.playerId).reduce((a, d) => a + Number(d.amount), 0);
     const subtotal = money(t.subtotal + otherNet), vatTotal = money(t.vatTotal + otherVat);
-    const stamp = new Date().toISOString().slice(0, 10).split('-').reverse().join('/');
+    const stamp = dubaiToday().split('-').reverse().join('/');
     await this.invoices.update(id, {
       subtotal: subtotal.toFixed(2), vatTotal: vatTotal.toFixed(2),
       discountTotal: money(t.discountTotal + invoiceLevel).toFixed(2),
@@ -459,7 +463,8 @@ export class InvoicesService {
    */
   async trainingSummary(id: string) {
     const inv = await this.findOne(id);
-    const enrolments = await this.enrolments.find({ where: { invoiceId: id }, relations: { player: true, term: true, team: true } });
+    // What the invoice was issued for (not the enrolments that replaced them in a squad move).
+    const enrolments = await this.enrolments.find({ where: { invoiceId: id, movedFromId: IsNull() }, relations: { player: true, term: true, team: true } });
     const paid = (inv.payments || []).some((p) => p.status === PaymentStatus.COMPLETED) || Number(inv.amountPaid) > 0;
     const editable = [InvoiceStatus.DRAFT, InvoiceStatus.ISSUED].includes(inv.status) && !paid && !Number(inv.writeOffAmount) && !inv.isSponsored;
     const why = editable ? null
@@ -527,7 +532,7 @@ export class InvoicesService {
   async issue(id: string) {
     const inv = await this.findOne(id);
     if (inv.status !== InvoiceStatus.DRAFT) throw new BadRequestException('Only draft invoices can be issued');
-    await this.invoices.update(id, { status: InvoiceStatus.ISSUED, issueDate: new Date().toISOString().slice(0, 10) });
+    await this.invoices.update(id, { status: InvoiceStatus.ISSUED, issueDate: dubaiToday() });
     return this.findOne(id);
   }
 

@@ -8,6 +8,7 @@ import { PaymentGatewayService } from '../finance/payment-gateway.service';
 import { SettingsService } from '../finance/settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { paymentLinkEmail } from '../notifications/email-templates';
+import { dubaiToday } from '../../common/dubai-date';
 
 const LINK_DAYS = 30;
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -102,7 +103,7 @@ export class PaymentLinksService {
     const inv = await this.load(invoiceId);
     const d = await this.due(invoiceId, seq);
     const profile = await this.settings.invoiceProfile();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = dubaiToday();
     const due = d.dueDate ?? inv.dueDate ?? null;
     const players = [...new Set(inv.lineItems.map((l) => (l.player ? `${l.player.firstName} ${l.player.lastName}` : null)).filter(Boolean))].join(', ');
     const m = paymentLinkEmail({

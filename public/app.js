@@ -750,6 +750,7 @@ function renderPlayer() {
     actions.push(act('pAddTerm', '+', 'Add term and generate invoice', d.currentTerm ? `Current: ${esc(d.currentTerm.name)}` : 'Not enrolled yet'));
   }
   if (can('invoice.create')) actions.push(act('pItems', '◆', 'User term — add items', 'Kits, league or another charge'));
+  if (can('team.edit') && can('invoice.create') && !archived) actions.push(act('pMove', '⇧', 'Move to another team', 'Squad move-up — prices the difference'));
   if (can('wallet.view')) actions.push(act('pWallet', '◈', 'Wallet', money(g.wallet.balance)));
   if (can('guardian.manage')) actions.push(act('pSendLogin', '✉', 'Send sign-in details', `Parent portal · ${esc(g.email)}`));
   if (can('guardian.manage')) actions.push(act('pAccount', '⇄', 'Account switch', `View as ${esc(g.fullName)}`));
@@ -1093,6 +1094,85 @@ ACT.pAddTermGo = async () => {
       <div class="row-end">${inv ? `<button class="btn ghost" data-act="showInvoice" data-a1="${inv.id}">Open invoice</button>` : ''}<button class="btn" data-act="closeDrawer">Done</button></div>`);
     await loadLookups(true); await reloadPlayer();
   } catch (e) { errEl.innerHTML = `<div class="note bad">${esc(e.message)}</div>`; $('at-go').disabled = false; }
+};
+
+// ---- Squad move: another team during the season, with the money settled ----
+// A move to more sessions a week is charged on its own linked invoice ("Squad move-up");
+// the term invoice never changes. A move to fewer sessions may be credited (credit note).
+let SQM = null;
+const LEVEL_RANK_UI = { HPC: 0, ADVANCED: 1, DEVELOPMENT: 2 };
+ACT.pMove = async () => {
+  const d = PLAYER; await loadLookups();
+  const cat = d.category?.code || d.team?.ageCodes?.[0] || null;
+  const teams = (LK.teams || []).filter((t) => t.isActive !== false && t.id !== d.team?.id)
+    .sort((a, b) => (cat && b.ageCodes?.includes(cat) ? 1 : 0) - (cat && a.ageCodes?.includes(cat) ? 1 : 0)
+      || (LEVEL_RANK_UI[a.level] ?? 9) - (LEVEL_RANK_UI[b.level] ?? 9) || band(a.ageCodes?.[0]) - band(b.ageCodes?.[0]) || a.name.localeCompare(b.name));
+  const tomorrow = addDaysIso(dubaiToday(), 1);
+  SQM = { quote: null };
+  openDrawer(`Move ${d.player.name} to another team`, `
+    <p class="mini" style="margin-top:0">Now in <b>${esc(d.team?.name || 'no team')}</b>. History is kept. A move to more sessions a week is charged on its own <b>Squad move-up</b> invoice linked to the term invoice, which never changes.</p>
+    <div class="frm">
+      <div class="full"><label class="lbl" for="mv-team">New team</label><select class="sel" id="mv-team">${opt('', 'Choose a team…')}${teams.map((t) =>
+        opt(t.id, `${t.name} · ${LEVEL_WORD[t.level] || t.level}${t.schedule ? ' · ' + t.schedule : ''}${cat && !t.ageCodes?.includes(cat) ? ' (other category)' : ''}`)).join('')}</select></div>
+      <div><label class="lbl" for="mv-date">First day in the new team</label><input class="in" type="date" id="mv-date" value="${tomorrow}"></div>
+      <div><label class="lbl" for="mv-reason">Reason</label><input class="in" id="mv-reason" maxlength="200" placeholder="e.g. Moved up after the October assessment"></div>
+    </div>
+    <div id="mv-quote" style="margin-top:12px"></div>
+    <div id="mv-err" style="margin-top:10px"></div>
+    <div class="row-end"><button class="btn ghost" data-act="closeDrawer">Cancel</button><button class="btn" id="mv-go" data-act="pMoveGo" disabled>Move</button></div>`, true);
+  for (const id of ['mv-team', 'mv-date']) $(id).addEventListener('change', mvQuote);
+};
+async function mvQuote() {
+  const box = $('mv-quote'), go = $('mv-go'), teamId = $('mv-team').value, date = $('mv-date').value;
+  $('mv-err').innerHTML = ''; go.disabled = true; SQM.quote = null;
+  if (!teamId) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="loading">Working out the price…</div>';
+  try {
+    const q = await api(`/players/${PLAYER.player.id}/move/quote?toTeamId=${teamId}${date ? '&moveDate=' + date : ''}`);
+    SQM.quote = q;
+    const line = (k, v, cls) => `<div class="ql ${cls || ''}"><span>${k}</span><span>${v}</span></div>`;
+    const groups = q.groups.map((g) => `<div class="card" style="padding:12px;margin-bottom:10px">
+      <div><b>${esc(g.packageLabel || g.terms.map((t) => t.name).join(', '))}</b>${g.invoiceNumber ? ` · term invoice <span class="ref">${esc(g.invoiceNumber)}</span>` : ''}</div>
+      <div class="mini">${esc(g.fromTeam || '—')} (${g.fromSessions}×/week) → ${esc(q.toTeam.name)} (${g.toSessions}×/week) · terms moved: ${esc(g.terms.map((t) => t.name).join(', '))}</div>
+      ${g.priceNote ? `<div class="note ${/Can't/.test(g.priceNote) ? 'bad' : 'info'}" style="margin-top:8px">${esc(g.priceNote)}</div>` : `<div class="quote" style="margin-top:8px">
+        ${line(`List price ${g.fromSessions}×/week`, money(g.oldPrice))}${line(`List price ${g.toSessions}×/week`, money(g.newPrice))}
+        ${line('Share left from ' + dmy(q.moveDate), g.sessionsLeft != null ? `${g.sessionsLeft} of ${g.sessionsTotal} sessions (${Math.round(g.ratio * 100)}%)` : 'all of it')}
+        ${line('Difference for that share', money(g.charge.gross))}
+        ${g.discountPercent ? line(`Same discount as before (${g.discountPercent}%)`, '− ' + money(Math.abs(g.charge.discount))) : ''}
+        ${line(g.charge.amount >= 0 ? '<b>To pay</b>' : '<b>Could be credited</b>', `<b>${money(Math.abs(g.charge.amount))}</b>`, 'tot')}</div>`}
+    </div>`).join('');
+    const split = q.groups.some((g) => g.charge.amount > 0 && g.remainingDueDates.length >= 2);
+    const opts = q.direction === 'UP' ? `
+        <label class="chk"><input type="checkbox" id="mv-issue" checked> Issue the move-up invoice now${'' /* auto-email follows the Settings switch */}</label>
+        ${split ? `<div style="margin-top:6px"><label class="chk"><input type="radio" name="mv-inst" value="split" checked> Split over the remaining instalment dates (${q.groups.find((g) => g.remainingDueDates.length >= 2).remainingDueDates.map(dmy).join(', ')})</label>
+          <label class="chk"><input type="radio" name="mv-inst" value="one"> One payment</label></div>` : ''}`
+      : q.direction === 'DOWN' && can('writeoff.create') && can('refund.create')
+        ? `<label class="chk"><input type="checkbox" id="mv-credit"> Credit ${money(q.toCredit)} — first against what is still owed, then to the family wallet, with a tax credit note</label>
+           <div class="mini">Leave it unticked when nothing should be credited (the coaches' decision, not a refund request).</div>`
+        : '';
+    box.innerHTML = `${q.warnings.map((w) => `<div class="note warn" style="margin-bottom:8px">${esc(w)}</div>`).join('')}${groups}
+      <div class="totbar"><span>${q.direction === 'UP' ? `Move-up invoice <b>${money(q.toPay)}</b>` : q.direction === 'DOWN' ? `Difference <b>${money(q.toCredit)}</b> in the family's favour` : '<b>No change in price</b>'}</span></div>${opts}`;
+    go.textContent = q.direction === 'UP' ? `Move and invoice ${money(q.toPay)}` : 'Move';
+    go.disabled = q.groups.some((g) => /Can't/.test(g.priceNote || ''));
+  } catch (e) { box.innerHTML = ''; $('mv-err').innerHTML = `<div class="note bad">${esc(e.message)}</div>`; }
+}
+ACT.pMoveGo = async () => {
+  const q = SQM?.quote; if (!q) return;
+  const go = $('mv-go'); go.disabled = true;
+  const body = { toTeamId: q.toTeam.id, moveDate: q.moveDate, reason: $('mv-reason').value.trim() || undefined,
+    issue: $('mv-issue') ? $('mv-issue').checked : undefined,
+    instalments: document.querySelector('input[name="mv-inst"]:checked')?.value || undefined,
+    credit: $('mv-credit') ? $('mv-credit').checked : undefined };
+  try {
+    const r = await api(`/players/${PLAYER.player.id}/move`, { method: 'POST', body: JSON.stringify(body) });
+    const inv = r.invoices[0];
+    const credited = r.credits.reduce((s, c) => s + c.writtenOff + c.toWallet, 0);
+    openDrawer('Moved', `<div class="note good">${esc(PLAYER.player.name)} is now in <b>${esc(q.toTeam.name)}</b> from ${dmy(q.moveDate)} (${r.moved} term${r.moved === 1 ? '' : 's'} moved; history kept).</div>
+      ${inv ? `<dl class="kv" style="margin-top:14px"><dt>Move-up invoice</dt><dd class="ref">${esc(inv.number)}</dd><dt>Status</dt><dd>${statusPill(inv.status)}</dd><dt>Total</dt><dd><b>${money(inv.total)}</b></dd></dl>` : ''}
+      ${credited > 0 ? `<div class="note info" style="margin-top:10px">Credited ${money(credited)} with a tax credit note on the term invoice.</div>` : ''}
+      <div class="row-end">${inv ? `<button class="btn ghost" data-act="showInvoice" data-a1="${inv.id}">Open invoice</button>` : ''}<button class="btn" data-act="closeDrawer">Done</button></div>`);
+    await reloadPlayer();
+  } catch (e) { $('mv-err').innerHTML = `<div class="note bad">${esc(e.message)}</div>`; go.disabled = false; }
 };
 
 // ---- "User term": add items to a registered child ----

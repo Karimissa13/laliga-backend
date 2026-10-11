@@ -5,6 +5,7 @@ import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import {
   InventoryItem, InventoryMovement, InventoryProgramme, StockMovementType,
 } from '../../database/entities';
+import { dubaiToday } from '../../common/dubai-date';
 
 const PREFIX: Record<InventoryProgramme, string> = { LALIGA: 'LL', ADSC: 'ADSC' };
 
@@ -122,7 +123,7 @@ export class InventoryService {
       const group = await this.nextGroup(m, prefix);
       const itemCode = (dto.itemCode?.trim() || `${prefix}-${group}`).toUpperCase();
       const batch = `NEW-${Date.now().toString(36).toUpperCase()}`;
-      const today = new Date().toISOString().slice(0, 10);
+      const today = dubaiToday();
       const created: InventoryItem[] = [];
       for (const s of dto.sizes) {
         const sku = `${prefix}-${group}-${sizeCode(s.size)}`;
@@ -159,7 +160,7 @@ export class InventoryService {
       }));
       await m.save(InventoryMovement, m.create(InventoryMovement, {
         itemId: item.id, type: StockMovementType.OPENING, quantity: sz.openingQty, balanceAfter: sz.openingQty,
-        movedOn: new Date().toISOString().slice(0, 10), reason: 'Opening stock', batch: 'PRACTICE', recordedById: actorId ?? null,
+        movedOn: dubaiToday(), reason: 'Opening stock', batch: 'PRACTICE', recordedById: actorId ?? null,
       }));
       return [item];
     });
@@ -185,7 +186,7 @@ export class InventoryService {
     if (dto.type === StockMovementType.OPENING) throw new BadRequestException('Opening stock is set when an item is added');
     if (!dto.lines?.length) throw new BadRequestException('Add at least one item');
     if (dto.type === StockMovementType.OUT && !dto.party?.trim()) throw new BadRequestException('Say who the items were given to');
-    const movedOn = dto.movedOn ?? new Date().toISOString().slice(0, 10);
+    const movedOn = dto.movedOn ?? dubaiToday();
     const batch = `${dto.type === 'IN' ? 'IN' : dto.type === 'OUT' ? 'OUT' : 'ADJ'}-${movedOn.replace(/-/g, '').slice(2)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
     return this.ds.transaction(async (m) => {
       const ids = dto.lines.map((l) => l.itemId).filter(Boolean) as string[];
@@ -251,7 +252,7 @@ export class InventoryService {
     const existing = new Set((await this.items.find({ select: { sku: true } })).map((i) => i.sku));
     const fresh = rows.filter((r) => !existing.has(r.sku));
     if (!fresh.length) return { imported: 0, skipped: rows.length };
-    const today = new Date().toISOString().slice(0, 10);
+    const today = dubaiToday();
     await this.ds.transaction(async (m) => {
       for (const r of fresh) {
         const qty = Math.max(0, Math.floor(r.openingQty || 0));

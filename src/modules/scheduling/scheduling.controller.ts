@@ -9,6 +9,7 @@ import { RequirePermissions } from '../../common/decorators/permissions.decorato
 import { SeasonScheduleService } from './season-schedule.service';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { ArrayMaxSize, IsArray, IsBoolean, IsDateString, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { dubaiToday } from '../../common/dubai-date';
 
 export class GenerateSeasonDto {
   @ApiPropertyOptional({ description: 'Defaults to the active season' }) @IsOptional() @IsUUID() seasonId?: string;
@@ -45,7 +46,7 @@ export class SchedulingController {
   @Post('teams/:id/sessions/sync') @RequirePermissions('session.create') @Audit('session.team_sync', 'team')
   @ApiOperation({ summary: "Re-plan a team's future sessions after its training days or times change" })
   syncTeam(@Param('id', ParseUUIDPipe) id: string) {
-    return this.season.generate({ teamIds: [id], from: new Date().toISOString().slice(0, 10), sync: true });
+    return this.season.generate({ teamIds: [id], from: dubaiToday(), sync: true });
   }
 
   @Get('teams/:id/attendance-grid') @RequirePermissions('attendance.view')

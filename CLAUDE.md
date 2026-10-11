@@ -65,6 +65,9 @@ Run the e2e suite on a **fresh, seeded** database (some suites assume the seed's
 | Tax credit notes | `src/modules/finance/credit-notes.service.ts`, `invoice-pdf.service.ts` (`renderCreditNote`) |
 | Invoice list (sort, quick filters, bulk) | `finance-reports.service.ts` (`INVOICE_SORT`), `src/modules/invoice-bulk/` |
 | Query-string converters | `src/common/query-params.ts` — use these in DTOs, never `({ value }) => …` (implicit conversion runs first) |
+| "Today" | `src/common/dubai-date.ts` (`dubaiToday`, `dubaiDatePlus`) — never `new Date().toISOString().slice(0, 10)` (UTC is a day behind before 4 am) |
+| Squad moves (move-up invoice, move-down credit) | `src/modules/player-desk/squad-move.ts` (pure), `squad-move.service.ts`; replaced enrolments keep the term invoice (`movedFromId`), the PDF of a term invoice ignores their replacements |
+| Trials & date-of-birth range | `TRIAL_LEVEL`/`TRIAL_WEEKDAYS` in `leads.service.ts`; `birthDateRange` in `people/age-group.util.ts` |
 
 History of every build and decision: `PROGRESS.md`. The Claude Project "LaLiga Backend Enhancement" holds one doc
 per build and the go-live plan ("LaLiga — go-live and Term 2 cutover plan").

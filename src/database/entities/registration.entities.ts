@@ -140,6 +140,14 @@ export class Enrolment {
   @ManyToOne(() => Invoice, { nullable: true })
   @JoinColumn({ name: 'invoiceId' })
   invoice?: Invoice;
+  /**
+   * Squad move: the enrolment this one replaced (same term, previous team). The replaced
+   * one stays as it was (status TRANSFERRED) on the original invoice, so that invoice
+   * never changes; this one keeps the same invoiceId (the term is still paid by it).
+   */
+  @Index() @Column({ type: 'uuid', nullable: true }) movedFromId?: string | null;
+  /** Squad move-up: the invoice that charged the difference for this term, if any. */
+  @Index() @Column({ type: 'uuid', nullable: true }) moveUpInvoiceId?: string | null;
   @CreateDateColumn() createdAt: Date;
   @UpdateDateColumn() updatedAt: Date;
 }

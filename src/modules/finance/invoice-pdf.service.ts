@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import PDFDocument from 'pdfkit';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -66,9 +66,18 @@ export class InvoicePdfService {
       relations: { guardian: true, lineItems: { player: { ageGroup: true } }, discounts: true, payments: true },
     });
     if (!inv) throw new NotFoundException('Invoice not found');
-    const enrols = await this.enrolments.find({
-      where: { invoiceId: inv.id }, relations: { term: true, season: true, team: true, player: true },
-    });
+    // An invoice shows what it was issued for: a term invoice its own enrolments (never the
+    // ones that replaced them in a later squad move); a move-up invoice the new team's enrolments.
+    const relations = { term: true, season: true, team: true, player: true } as const;
+    const moveUp = inv.purpose === 'MOVE_UP';
+    const enrols = moveUp
+      ? await this.enrolments.find({ where: { moveUpInvoiceId: inv.id }, relations })
+      : await this.enrolments.find({ where: { invoiceId: inv.id, movedFromId: IsNull() }, relations });
+    const movedFrom = moveUp && enrols.length
+      ? new Map((await this.enrolments.find({ where: { id: In(enrols.map((e) => e.movedFromId).filter(Boolean) as string[]) }, relations: { team: true } }))
+        .map((e) => [e.id, e]))
+      : new Map<string, Enrolment>();
+    const original = moveUp && inv.relatedInvoiceId ? await this.invoices.findOne({ where: { id: inv.relatedInvoiceId } }) : null;
     const profile = await this.settings.invoiceProfile();
     // Children who start after the first day: their prorated sessions, worked out before drawing.
     const prorated = new Map<string, Proration>();
@@ -153,13 +162,20 @@ export class InvoicePdfService {
         const cat = player.ageGroup?.code ?? team?.ageCodes?.[0] ?? '';
         rows.push(['Player', `${player.firstName} ${player.lastName} (${player.reference})`]);
         rows.push(['Academy', profile.academyName]);
+        if (moveUp) {
+          const from = movedFrom.get(mine[0].movedFromId ?? '');
+          if (from?.team) rows.push(['Squad move-up', `from ${from.team.name} (${from.sessionsPerWeek ?? defaultSessionsPerWeek(from.team)}×/week)`]);
+          if (original) rows.push(['Term invoice', `${original.number} (${isoDate(original.issueDate)})`]);
+        }
         rows.push(['Terms', `${season} Term ${termNums} - ${longDate(first?.startDate)} - ${longDate(last?.endDate)}`]);
         if (line.package) rows.push(['Option', PACKAGE_LABEL[line.package as keyof typeof PACKAGE_LABEL] ?? line.package]);
         rows.push(['Age Category', cat.replace(/^U/, 'U-')]);
         if (team) rows.push(['Team', team.name]);
         if (weeks) rows.push(['Training Weeks', String(weeks)]);
         rows.push(['Start Date', isoDate(start)]);
-        if (weeks) rows.push(['No of Sessions', pr ? `${Math.max(1, Math.round(weeks * spw * pr.ratio))} of ${weeks * spw} (prorated from the start date)` : String(weeks * spw)]);
+        // Prorated: the real session counts the fee was worked out from (the team's plan, holidays left out),
+        // so the PDF says exactly what the invoice line says.
+        if (weeks) rows.push(['No of Sessions', pr ? `${pr.sessionsLeft} of ${pr.sessionsTotal} (prorated from the start date)` : String(weeks * spw)]);
         if (team?.trainingDays?.length) {
           const lvl = LEVEL_SHORT[team.level] ?? team.level;
           rows.push(['Classes', team.trainingDays.map((d) => `${cat.replace(/^U/, 'U-')} ${lvl} ${DAY[d] ?? d} ${t12(team.startTime)} to ${t12(team.endTime)}`).join('\n')]);

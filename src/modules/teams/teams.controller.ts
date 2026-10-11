@@ -6,6 +6,7 @@ import { SeasonScheduleService } from '../scheduling/season-schedule.service';
 import { CreateCoachDto, CreateTeamDto, TransferPlayerDto, UpdateCoachDto, UpdateTeamDto } from './dto/team.dto';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { Audit } from '../../common/decorators/audit.decorator';
+import { dubaiToday } from '../../common/dubai-date';
 
 @ApiTags('Teams & Coaches')
 @Controller()
@@ -35,7 +36,7 @@ export class TeamsController {
     // (sessions that already have a register are kept).
     const d: any = dto;
     if (d.trainingDays !== undefined || d.startTime !== undefined || d.endTime !== undefined) {
-      try { await this.season.generate({ teamIds: [id], from: new Date().toISOString().slice(0, 10), sync: true }); } catch { /* no season dates yet */ }
+      try { await this.season.generate({ teamIds: [id], from: dubaiToday(), sync: true }); } catch { /* no season dates yet */ }
     }
     return team;
   }

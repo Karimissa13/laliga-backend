@@ -9,6 +9,8 @@ import { PACKAGE_LABEL } from '../finance/pricing';
 export interface EnrolmentLike {
   id: string; termId: string; status: string; enrolledAt: Date | string;
   invoiceId?: string | null; package?: string | null; sessionsPerWeek?: number | null;
+  /** Set on the enrolment that replaced another in a squad move. */
+  movedFromId?: string | null;
   term?: { id?: string; name?: string; startDate?: string | null; endDate?: string | null } | null;
   season?: { name?: string } | null; team?: { name?: string } | null;
 }
@@ -42,7 +44,11 @@ export function summarisePurchases(enrols: EnrolmentLike[], today = dubaiToday()
   }
   const out: Purchase[] = [];
   for (const [key, list] of groups) {
-    const sorted = list.slice().sort((a, b) => String(a.term?.startDate ?? '').localeCompare(String(b.term?.startDate ?? '')));
+    // After a squad move a term has two enrolments on the same invoice: the old team's
+    // (replaced) and the new team's. The purchase describes the child now: the new one.
+    const replaced = new Set(list.map((e) => e.movedFromId).filter(Boolean) as string[]);
+    const sorted = list.filter((e) => !replaced.has(e.id))
+      .sort((a, b) => String(a.term?.startDate ?? '').localeCompare(String(b.term?.startDate ?? '')));
     const live = sorted.filter((e) => e.status !== 'CANCELLED');
     const pick = live.length ? live : sorted;
     const pkg = pick.find((e) => e.package)?.package ?? null;

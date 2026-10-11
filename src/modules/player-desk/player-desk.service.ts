@@ -21,6 +21,7 @@ import { SiblingCreditResult, SiblingCreditService } from '../finance/sibling-cr
 import { PAYMENT_STATE_LABEL, isOverdue, paymentStateOf } from '../finance/payment-state';
 import { levelExplainer, levelRank, slotLabel } from '../teams/team-label';
 import { ordinal } from '../finance/sibling-ladder';
+import { dubaiToday } from '../../common/dubai-date';
 
 const money = (n: number) => Math.round(n * 100) / 100;
 
@@ -391,7 +392,7 @@ export class PlayerDeskService {
       this.pricing.seasonTerms(season.id),
       this.pricing.productsForRegistration(level),
     ]);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = dubaiToday();
     const category = team?.girlsOnly ? 'GIRLS' : ag?.code ?? null;
     const tiers = list.tiers
       .filter((t) => !category || t.rows.some((r) => r.category === category && r.isActive))

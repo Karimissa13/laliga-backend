@@ -1,3 +1,4 @@
+import { dubaiToday } from '../../common/dubai-date';
 /**
  * Instalments, worked out from the payments ledger.
  *
@@ -28,7 +29,7 @@ export function amountsFor(total: number, percents: number[]): number[] {
 }
 
 export function allocate(plan: PlanRow[], payments: LedgerPayment[], opts: { genericWriteOff?: number; today?: string } = {}): InstalmentView[] {
-  const today = opts.today ?? new Date().toISOString().slice(0, 10);
+  const today = opts.today ?? dubaiToday();
   const rows = plan.slice().sort((a, b) => a.seq - b.seq).map((p) => ({ ...p, need: r2(p.amount - p.waivedAmount), paid: 0, writtenOff: 0 }));
   // A write-off not made by waiving an instalment comes off the last ones first.
   let wo = r2(Math.max(0, opts.genericWriteOff ?? 0));
