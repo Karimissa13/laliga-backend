@@ -31,6 +31,11 @@ export class PlayersController {
     return r;
   }
 
+  // Before ':id', so "birth-date-range" is never read as a player id.
+  @Get('birth-date-range')
+  @ApiOperation({ summary: 'Dates of birth the academy takes this season (U6 to U18) — limits the date pickers' })
+  birthDateRange() { return this.players.birthDateRange(); }
+
   @Get(':id')
   @RequirePermissions('player.view')
   findOne(@Param('id') id: string) { return this.players.findOne(id); }

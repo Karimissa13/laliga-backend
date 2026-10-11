@@ -1,4 +1,4 @@
-import { deriveAgeGroupCode } from './age-group.util';
+import { birthDateRange, deriveAgeGroupCode, isBirthDateInRange } from './age-group.util';
 
 describe('deriveAgeGroupCode', () => {
   const cutoff = '2026-12-31';
@@ -62,5 +62,24 @@ describe('placeInCategory (academy rule: gap years play up)', () => {
 
   it('is not fooled by input order', () => {
     expect(placeInCategory('U15', [...academy].reverse())).toMatchObject({ code: 'U16' });
+  });
+});
+
+describe('birthDateRange (U6 to U18, the academy age table)', () => {
+  it('2026/27 season: 01/01/2009 to 30/06/2022', () => {
+    expect(birthDateRange('2026-12-31')).toEqual({ from: '2009-01-01', to: '2022-06-30' });
+  });
+
+  it('moves on by itself with the next season', () => {
+    expect(birthDateRange('2027-12-31')).toEqual({ from: '2010-01-01', to: '2023-06-30' });
+  });
+
+  it('takes the edges and refuses anything outside', () => {
+    const r = birthDateRange('2026-12-31');
+    expect(isBirthDateInRange('2009-01-01', r)).toBe(true);   // oldest U18
+    expect(isBirthDateInRange('2022-06-30', r)).toBe(true);   // youngest U6
+    expect(isBirthDateInRange('2008-12-31', r)).toBe(false);  // too old
+    expect(isBirthDateInRange('2022-07-01', r)).toBe(false);  // too young
+    expect(isBirthDateInRange('not a date', r)).toBe(false);
   });
 });

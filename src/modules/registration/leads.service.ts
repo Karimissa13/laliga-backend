@@ -9,6 +9,11 @@ import { normaliseMobile } from '../../common/contact.util';
 import { GuardiansService } from '../people/guardians.service';
 import { PlayersService } from '../people/players.service';
 
+/** Free trials are booked into Development sessions on Tuesdays and Thursdays (Karim, 10 Oct 2026). */
+export const TRIAL_LEVEL = 'DEVELOPMENT';
+/** ISO weekdays in Abu Dhabi time: 2 = Tuesday, 4 = Thursday. */
+export const TRIAL_WEEKDAYS = [2, 4];
+
 /** How the desk talks about each stage. */
 export const LEAD_STAGE_LABEL: Record<LeadStatus, string> = {
   NEW: 'New', CONTACTED: 'Contacted', TRIAL_BOOKED: 'Trial booked', TRIAL_ATTENDED: 'Trial done',
@@ -166,10 +171,16 @@ export class LeadsService {
     guardianName: string; guardianEmail?: string | null; guardianMobile: string; playerName: string;
     playerDob?: string | null; source?: LeadSource; sourceDetail?: string | null; isGuardian?: boolean;
     notes?: string | null; trialDate?: string; venueLabel?: string; level?: string; ageGroupLabel?: string; playerGender?: string;
-  }, authorId?: string) {
+  }, authorId?: string, opts: { outOfRangeDob?: 'refuse' | 'leaveOut' } = {}) {
     const mobile = normaliseMobile(input.guardianMobile) ?? input.guardianMobile.trim();
     const email = input.guardianEmail?.trim().toLowerCase() || null;
-    const dob = parseDob(input.playerDob ?? null);
+    let dob = parseDob(input.playerDob ?? null);
+    // Only U6–U18 dates of birth (this season's range). Staff are told; from the website
+    // pop-up the date is left out and the enquiry is still kept.
+    if (dob) {
+      try { await this.playersService.assertBirthDateAllowed(dob); }
+      catch (e) { if (opts.outOfRangeDob === 'leaveOut') dob = null; else throw e; }
+    }
     let category = input.ageGroupLabel ?? null;
     if (dob && !category) { try { category = (await this.playersService.placeByDob(dob)).code ?? null; } catch { /* outside the ranges */ } }
     const [dupe] = await this.ds.query(
@@ -203,6 +214,7 @@ export class LeadsService {
     if (input.playerDob) {
       patch.playerDob = parseDob(input.playerDob);
       if (!patch.playerDob) throw new BadRequestException('Date of birth not understood — use DD/MM/YYYY');
+      await this.playersService.assertBirthDateAllowed(patch.playerDob);
       try { patch.ageGroupLabel = (await this.playersService.placeByDob(patch.playerDob)).code ?? null; } catch { /* keep */ }
     }
     await this.leads.update(id, patch);
@@ -361,16 +373,34 @@ export class LeadsService {
         AND u.email <> $1 ORDER BY u."fullName"`, [(process.env.SEED_ADMIN_EMAIL || 'admin@laligaacademy.local').toLowerCase()]);
   }
 
-  /** Upcoming sessions a trial can be booked into, for a child's category. */
+  /**
+   * Upcoming sessions a free trial can be booked into: Development teams' sessions on
+   * Tuesdays and Thursdays only (Karim, 10 Oct 2026). Development squads span two birth
+   * years (U9 trains with U10 Development, U11 with U12, U15 with U16), so a child whose
+   * own category has no Development team is offered the next Development group up.
+   */
   async trialSlots(id: string, days = 21) {
     const lead = await this.findOne(id);
-    const cat = lead.ageGroupLabel ?? null;
+    const cat = await this.trialCategory(lead.ageGroupLabel ?? null);
     return this.ds.query(`
       SELECT s.id, s."startsAt", s."endsAt", t.id AS "teamId", t.name AS team, t.level, l.name AS location,
              (SELECT count(*)::int FROM leads x WHERE x."trialSessionId" = s.id) AS "trialsBooked"
       FROM sessions s JOIN teams t ON t.id = s."teamId" LEFT JOIN locations l ON l.id = s."locationId"
       WHERE s.type = 'TRAINING' AND NOT s."isCancelled" AND s."startsAt" > now() AND s."startsAt" < now() + ($1 || ' days')::interval
+        AND t.level = $3 AND t."isActive"
+        AND EXTRACT(ISODOW FROM s."startsAt" AT TIME ZONE 'Asia/Dubai')::int = ANY($4::int[])
         AND ($2::text IS NULL OR $2 = ANY(t."ageCodes"))
-      ORDER BY s."startsAt", t.name LIMIT 80`, [String(days), cat]);
+      ORDER BY s."startsAt", t.name LIMIT 80`, [String(days), cat, TRIAL_LEVEL, TRIAL_WEEKDAYS]);
+  }
+
+  /** The category whose Development teams take the trial: the child's own, else the next one up that has them. */
+  private async trialCategory(code: string | null): Promise<string | null> {
+    if (!code) return null;
+    const rows: Array<{ code: string }> = await this.ds.query(
+      `SELECT DISTINCT unnest("ageCodes") AS code FROM teams WHERE level = $1 AND "isActive"`, [TRIAL_LEVEL]);
+    const band = (c: string) => Number(String(c).replace(/\D/g, '')) || 0;
+    const want = band(code);
+    const up = rows.map((r) => r.code).filter((c) => band(c) >= want).sort((a, b) => band(a) - band(b));
+    return up[0] ?? code;
   }
 }

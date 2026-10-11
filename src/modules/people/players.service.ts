@@ -8,7 +8,7 @@ import {
 import { ReferenceService } from '../../common/reference.service';
 import { DomainEvents } from '../../common/domain-events';
 import { PaginationDto, paginate } from '../../common/dto/pagination.dto';
-import { CategoryPlacement, deriveAgeGroupCode, placeInCategory } from './age-group.util';
+import { CategoryPlacement, birthDateRange, deriveAgeGroupCode, isBirthDateInRange, placeInCategory } from './age-group.util';
 
 export interface PlayerFilter extends PaginationDto {
   status?: PlayerStatus;
@@ -42,6 +42,21 @@ export class PlayersService {
     const placement = placeInCategory(exact, active.map((a) => a.code));
     const ageGroup = placement.code ? active.find((a) => a.code === placement.code) ?? null : null;
     return { ...placement, ageGroup };
+  }
+
+  /** The dates of birth taken this season (U6 to U18) — see birthDateRange. */
+  async birthDateRange() {
+    const activeSeason = await this.seasons.findOne({ where: { isActive: true } });
+    return birthDateRange(activeSeason?.cutoffDate);
+  }
+
+  /** Refuses a date of birth outside this season's U6–U18 range, in plain words. */
+  async assertBirthDateAllowed(dob: string) {
+    const r = await this.birthDateRange();
+    if (!isBirthDateInRange(dob, r)) {
+      const dmy = (d: string) => d.split('-').reverse().join('/');
+      throw new BadRequestException(`Date of birth must be between ${dmy(r.from)} and ${dmy(r.to)} — the academy takes U6 to U18 this season.`);
+    }
   }
 
   private async resolveAgeGroup(dob: string): Promise<AgeGroup | null> {
@@ -92,6 +107,7 @@ export class PlayersService {
   }, opts: { notify?: boolean; actorId?: string } = {}) {
     const guardian = await this.guardians.findOne({ where: { id: input.guardianId } });
     if (!guardian) throw new BadRequestException('Invalid guardianId');
+    await this.assertBirthDateAllowed(input.dateOfBirth);
     const derived = await this.resolveAgeGroup(input.dateOfBirth);
     const manual = input.ageGroupId && input.ageGroupId !== derived?.id
       ? await this.ageGroups.findOne({ where: { id: input.ageGroupId } })
@@ -136,6 +152,10 @@ export class PlayersService {
     delete patch.guardianId; // moving a child between guardians is a separate, audited action
     if (typeof input.mobile === 'string') patch.mobile = normaliseMobile(input.mobile);
     if (typeof input.emergencyContactPhone === 'string') patch.emergencyContactPhone = normaliseMobile(input.emergencyContactPhone);
+    // A changed date of birth must be in this season's range (an unchanged one is left alone).
+    if (input.dateOfBirth && String(input.dateOfBirth).slice(0, 10) !== String(player.dateOfBirth).slice(0, 10)) {
+      await this.assertBirthDateAllowed(input.dateOfBirth);
+    }
     // Re-derive age group when DOB changes, unless an override is in force.
     if (input.dateOfBirth && !player.ageGroupOverride) {
       const ag = await this.resolveAgeGroup(input.dateOfBirth);

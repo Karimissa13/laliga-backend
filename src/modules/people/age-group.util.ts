@@ -20,6 +20,23 @@ export function deriveAgeGroupCode(dateOfBirth: string | Date, cutoffDate?: stri
 
 const bandOf = (code: string) => Number(String(code).replace(/^U/i, ''));
 
+/**
+ * Dates of birth the academy takes in a season (Karim's age table, Oct 2026): from the
+ * oldest U18 — born 1 January, 17 years before the cutoff year — to the youngest U6 —
+ * born by 30 June, 4 years before it. For the 2026/27 season (cutoff 31 Dec 2026):
+ * 01/01/2009 to 30/06/2022. Any other date of birth is refused (or, from the website
+ * pop-up, left out) and can't be picked on the screens.
+ */
+export function birthDateRange(cutoffDate?: string | Date | null): { from: string; to: string } {
+  const year = (cutoffDate ? new Date(cutoffDate) : new Date()).getUTCFullYear();
+  return { from: `${year - 17}-01-01`, to: `${year - 4}-06-30` };
+}
+
+export function isBirthDateInRange(dob: string, range: { from: string; to: string }): boolean {
+  const d = String(dob).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= range.from && d <= range.to;
+}
+
 export interface CategoryPlacement {
   /** The category the child is placed in, or null if no category can take them. */
   code: string | null;

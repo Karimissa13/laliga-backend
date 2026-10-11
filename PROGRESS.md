@@ -315,3 +315,9 @@ Living status of the backend build. Updated each phase.
 - [x] Each Vercel deploy runs the set-up once (the build script was run twice by Vercel's function builder).
 - [x] **DEPLOY.md** (was DEPLOY-VERCEL.md) rewritten: the live set-up as done, the settings table, the release step, Vercel specifics, moving to Docker or a Node host on the same Neon database, backups.
 - [x] **Tests** — 105 unit + 141 e2e green on Node 24 / PostgreSQL 18; the e2e suites now run through the production app set-up.
+
+## ✅ Completed — Trials on Development days; date-of-birth range — 12 Oct 2026
+
+- [x] **Book a free trial** offers only **Development** sessions on **Tuesdays and Thursdays** (Abu Dhabi time). A child whose own category has no Development team is offered the next Development group up, as in the academy's table (U9 → U10 Development, U11 → U12, U15 → U16). Rule in one place: `TRIAL_LEVEL` / `TRIAL_WEEKDAYS` in `leads.service.ts`.
+- [x] **Dates of birth limited to U6–U18:** 01/01/2009 to 30/06/2022 for 2026/27, worked out from the season's cutoff (`birthDateRange`, moves on each season). The date pickers (new enquiry, edit enquiry, register a child, edit player) can't go outside it; the API refuses it for children and staff-entered enquiries; from the website pop-up the enquiry is kept and the out-of-range date left out. The legacy import is not affected.
+- [x] **Tests** — 108 unit + 146 e2e (5 new: Tue/Thu Development slots, U9 → U10 Development, range endpoint, refusals, pop-up).

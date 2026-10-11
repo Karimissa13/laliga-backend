@@ -141,9 +141,11 @@ const lvlBadge = (l) => l ? `<span class="lvl ${esc(l)}">${esc(LEVEL_WORD[l] || 
 async function loadLookups(force) {
   if (LK.loaded && !force) return LK;
   const safe = (p) => api(p).catch(() => []);
-  const [loc, ag, sea, ter, board, co] = await Promise.all([
+  const [loc, ag, sea, ter, board, co, dobs] = await Promise.all([
     safe('/locations'), safe('/age-groups'), safe('/seasons'), safe('/terms'), safe('/team-board'), safe('/coaches'),
+    api('/players/birth-date-range').catch(() => null),
   ]);
+  LK.dobRange = dobs && dobs.from ? dobs : null;
   LK.locations = (loc || []).filter((l) => l.isActive);
   LK.ageGroups = (ag || []).filter((a) => a.isActive).sort((a, b) => band(a.code) - band(b.code));
   LK.seasons = sea || [];
@@ -154,6 +156,9 @@ async function loadLookups(force) {
   LK.loaded = true;
   return LK;
 }
+
+/** A date-of-birth picker limited to this season's U6–U18 range (dates outside it can't be picked). */
+const dobInput = () => `type="date"${LK.dobRange ? ` min="${LK.dobRange.from}" max="${LK.dobRange.to}" title="U6 to U18: ${dmy(LK.dobRange.from)} to ${dmy(LK.dobRange.to)}"` : ''}`;
 
 function payPill(p) {
   if (!p) return '—';
@@ -858,7 +863,7 @@ ACT.pEdit = () => {
     <h3 style="font-size:13px;margin-bottom:10px">Child</h3>
     <div class="frm">
       ${fld('First name', 'e-first', p.firstName)}${fld('Last name', 'e-last', p.lastName)}
-      ${fld('Date of birth', 'e-dob', p.dateOfBirth, 'type="date"')}
+      ${fld('Date of birth', 'e-dob', p.dateOfBirth, dobInput())}
       <div><label class="lbl" for="e-gender">Gender</label><select class="sel" id="e-gender">${opt('MALE', 'Male', p.gender === 'MALE')}${opt('FEMALE', 'Female', p.gender === 'FEMALE')}</select></div>
       <div class="full"><label class="lbl" for="e-cat">Category</label>
         <select class="sel" id="e-cat">${opt('', `Automatic — from date of birth (${d.category.fromDob || 'none'})`, !d.category.isOverride)}${LK.ageGroups.map((a) => opt(a.id, a.code + ' — set manually', d.category.isOverride && d.category.ageGroupId === a.id)).join('')}</select>
@@ -1681,11 +1686,11 @@ async function renderLeadPanel() {
       const slots = await api(`/leads/${l.id}/trial-slots`);
       const byDay = new Map();
       for (const s of slots) { const k = dubaiDay(s.startsAt); if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(s); }
-      box.innerHTML = card('Book a free trial', `<div class="mini" style="margin-bottom:8px">Training sessions in the next three weeks for ${l.ageGroupLabel ? `<b>${esc(l.ageGroupLabel)}</b>` : 'every category (add the date of birth to narrow this down)'}. The child appears on that session's register for the coach.</div>
+      box.innerHTML = card('Book a free trial', `<div class="mini" style="margin-bottom:8px">Development sessions on Tuesdays and Thursdays in the next three weeks for ${l.ageGroupLabel ? `<b>${esc(l.ageGroupLabel)}</b>` : 'every category (add the date of birth to narrow this down)'}. The child appears on that session's register for the coach.</div>
         ${[...byDay.entries()].map(([day, list]) => `<div style="margin-top:10px"><div class="mini" style="font-weight:700;color:var(--ink)">${new Date(day + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
           ${list.map((s) => `<div class="lookup-hit" style="margin:6px 0 0"><div><b>${hhmm(s.startsAt)}–${hhmm(s.endsAt)}</b> ${esc(s.team)} ${lvlBadge(s.level)}<div class="mini">${esc(shortLoc(s.location))}${s.trialsBooked ? ` · ${s.trialsBooked} trial${s.trialsBooked === 1 ? '' : 's'} already booked` : ''}</div></div>
             <button class="btn sm ${l.trialSessionId === s.id ? 'ghost' : ''}" data-act="leadBook" data-a1="${s.id}" ${l.trialSessionId === s.id ? 'disabled' : ''}>${l.trialSessionId === s.id ? 'Booked' : 'Book'}</button></div>`).join('')}</div>`).join('')
-        || '<div class="empty">No training sessions in the next three weeks for this category. Check the Schedule page.</div>'}`);
+        || '<div class="empty">No Development sessions on a Tuesday or Thursday in the next three weeks for this category. Check the Schedule page.</div>'}`);
     } catch (e) { box.innerHTML = card('Book a free trial', `<div class="note bad">${esc(e.message)}</div>`); }
   } else if (p === 'result') {
     box.innerHTML = card('How did the trial go?', `<div class="frm">
@@ -1701,7 +1706,7 @@ async function renderLeadPanel() {
     box.innerHTML = card('Edit details', `<div class="frm">
       ${fld('Parent name', 'le-gn', l.guardianName)}${fld('Mobile', 'le-gm', l.guardianMobile, 'type="tel"')}
       ${fld('Email', 'le-ge', l.guardianEmail || '', 'type="email"', true)}
-      ${fld('Child name', 'le-pn', l.playerName)}${fld('Date of birth', 'le-dob', l.playerDob || '', 'type="date"')}
+      ${fld('Child name', 'le-pn', l.playerName)}${fld('Date of birth', 'le-dob', l.playerDob || '', dobInput())}
       <div><label class="lbl" for="le-gender">Boy or girl</label><select class="sel" id="le-gender">${opt('', '—')}${opt('MALE', 'Boy', l.playerGender === 'MALE')}${opt('FEMALE', 'Girl', l.playerGender === 'FEMALE')}</select></div>
       <div><label class="lbl" for="le-src">Source</label><select class="sel" id="le-src">${LEAD_SOURCES.map(([k, t]) => opt(k, t, l.source === k)).join('')}</select></div></div>
       <div class="row-end"><button class="btn" data-act="leadSaveEdit">Save</button></div>`);
@@ -1744,7 +1749,7 @@ ACT.leadNew = () => {
     <div class="frm">
       ${fld('Parent name *', 'ln-gn', '')}${fld('Mobile *', 'ln-gm', '', 'type="tel" placeholder="050 123 4567"')}
       ${fld('Email', 'ln-ge', '', 'type="email"', true)}
-      ${fld('Child name *', 'ln-pn', '')}${fld('Date of birth', 'ln-dob', '', 'type="date"')}
+      ${fld('Child name *', 'ln-pn', '')}${fld('Date of birth', 'ln-dob', '', dobInput())}
       <div><label class="lbl" for="ln-gender">Boy or girl</label><select class="sel" id="ln-gender">${opt('', '—')}${opt('MALE', 'Boy')}${opt('FEMALE', 'Girl')}</select></div>
       <div><label class="lbl" for="ln-src">How did they hear about us?</label><select class="sel" id="ln-src">${LEAD_SOURCES.map(([k, t]) => opt(k, t, k === 'ENQUIRY')).join('')}</select></div>
       <div class="full"><label class="lbl" for="ln-notes">Notes</label><textarea class="in" id="ln-notes" rows="2" placeholder="What they asked about"></textarea></div></div>
@@ -1980,7 +1985,7 @@ function regStep2() {
     <p class="lead">The age category comes from the date of birth — no one has to work it out.</p>
     <div class="frm">
       ${fld('First name *', 'ch-first', c.firstName)}${fld('Last name *', 'ch-last', c.lastName)}
-      ${fld('Date of birth *', 'ch-dob', c.dateOfBirth, 'type="date"')}
+      ${fld('Date of birth *', 'ch-dob', c.dateOfBirth, dobInput())}
       <div><span class="lbl">Gender *</span><div class="opts" style="grid-template-columns:1fr 1fr">
         <button class="opt ${c.gender === 'MALE' ? 'on' : ''}" data-act="regGender" data-a1="MALE"><span class="t">Boy</span></button>
         <button class="opt ${c.gender === 'FEMALE' ? 'on' : ''}" data-act="regGender" data-a1="FEMALE"><span class="t">Girl</span></button></div></div>

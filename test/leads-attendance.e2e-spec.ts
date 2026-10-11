@@ -251,4 +251,59 @@ describe('Trials & Leads and season attendance (e2e)', () => {
       expect(d.sessions[0]).toHaveProperty('roster');
     });
   });
+  describe('free trials and dates of birth (Karim, Oct 2026)', () => {
+    const dubaiWeekday = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'Asia/Dubai' });
+    const lead = async (playerDob: string, name: string) => (await request(http).post('/api/v1/leads').set(auth()).send({
+      guardianName: `Rule Parent ${name}`, guardianMobile: `+97150${String(uniq + name.length).slice(-7)}`, playerName: name, playerDob,
+    })).body;
+
+    it('offers only Development sessions on Tuesdays and Thursdays', async () => {
+      const l = await lead('2013-05-05', 'Trial U14');
+      const slots = (await request(http).get(`/api/v1/leads/${l.id}/trial-slots`).set(auth()).expect(200)).body;
+      expect(slots.length).toBeGreaterThan(0);
+      for (const s of slots) {
+        expect(s.level).toBe('DEVELOPMENT');
+        expect(['Tuesday', 'Thursday']).toContain(dubaiWeekday(s.startsAt));
+      }
+    });
+
+    it('a U9 child (no U9 Development team) is offered U10 Development', async () => {
+      const l = await lead('2018-03-03', 'Trial U9');
+      expect(l.ageGroupLabel).toBe('U9');
+      const slots = (await request(http).get(`/api/v1/leads/${l.id}/trial-slots`).set(auth()).expect(200)).body;
+      expect(slots.length).toBeGreaterThan(0);
+      expect(slots.every((s: any) => /^U10 Development/.test(s.team))).toBe(true);
+    });
+
+    it('gives the date-of-birth range for the pickers (U6 to U18)', async () => {
+      const r = (await request(http).get('/api/v1/players/birth-date-range').set(auth()).expect(200)).body;
+      expect(r).toEqual({ from: '2009-01-01', to: '2022-06-30' });
+    });
+
+    it('refuses a date of birth outside U6–U18 for a child and a staff-entered enquiry', async () => {
+      const g = (await request(http).post('/api/v1/guardians').set(auth()).send({
+        fullName: `Range Family ${uniq}`, email: `range${uniq}@example.com`, mobile: `+97156${String(uniq).slice(-7)}`,
+      }).expect(201)).body;
+      const tooYoung = await request(http).post('/api/v1/players').set(auth()).send({
+        guardianId: g.id, firstName: 'Too', lastName: 'Young', dateOfBirth: '2023-01-10', gender: 'MALE',
+      }).expect(400);
+      expect(tooYoung.body.message).toMatch(/01\/01\/2009 and 30\/06\/2022/);
+      await request(http).post('/api/v1/players').set(auth()).send({
+        guardianId: g.id, firstName: 'Too', lastName: 'Old', dateOfBirth: '2008-12-31', gender: 'MALE',
+      }).expect(400);
+      await request(http).post('/api/v1/leads').set(auth()).send({
+        guardianName: 'Range Parent', guardianMobile: '+971501234560', playerName: 'Old Enquiry', playerDob: '2005-05-05',
+      }).expect(400);
+    });
+
+    it('the website pop-up keeps the enquiry but leaves an out-of-range date out', async () => {
+      const r = await request(http).post('/api/v1/public/trial-requests').send({
+        guardianName: `Range Web ${uniq}`, playerName: 'Big Brother', guardianMobile: '0501234561', playerDob: '01/01/2005',
+      }).expect(201);
+      const list = (await request(http).get(`/api/v1/leads?search=${r.body.reference}`).set(auth()).expect(200)).body;
+      const found = (list.data || list.items || list).find((x: any) => x.reference === r.body.reference);
+      expect(found).toBeTruthy();
+      expect(found.playerDob ?? null).toBeNull();
+    });
+  });
 });

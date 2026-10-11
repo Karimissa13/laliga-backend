@@ -192,7 +192,7 @@ export class LeadsController {
     if (errors.length) throw new BadRequestException(errors.flatMap((e) => Object.values(e.constraints ?? {})));
     if (dto.website) return { ok: true };                     // bot: pretend all is well
     if (rateLimited(ip || 'unknown')) throw new BadRequestException('Too many requests — please call us instead');
-    const lead = await this.leads.create({ ...dto, source: LeadSource.POPUP });
+    const lead = await this.leads.create({ ...dto, source: LeadSource.POPUP }, undefined, { outOfRangeDob: 'leaveOut' });
     return { ok: true, reference: lead.reference };
   }
 
