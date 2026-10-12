@@ -9,7 +9,8 @@ export interface MailMessage {
   text: string;
   replyTo?: string;
   fromName?: string;
-  attachments?: Array<{ filename: string; content: Buffer; contentType?: string }>;
+  /** Files, or inline images when `cid` is set (referenced in the HTML as cid:…). */
+  attachments?: Array<{ filename: string; content: Buffer; contentType?: string; cid?: string }>;
 }
 export interface MailResult { ok: boolean; simulated: boolean; messageId?: string; error?: string }
 

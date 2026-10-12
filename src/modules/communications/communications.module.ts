@@ -8,11 +8,12 @@ import { CommunicationsService } from './communications.service';
 import { AutomationsService } from './automations.service';
 import { SchedulerService } from './scheduler.service';
 import { CommunicationsController } from './communications.controller';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [TypeOrmModule.forFeature([
     Communication, CommunicationTemplate, Guardian, Player, Invoice, Lead, Enrolment, Term, Session,
-  ]), ScheduleModule.forRoot()],
+  ]), ScheduleModule.forRoot(), NotificationsModule],
   controllers: [CommunicationsController],
   providers: [CommunicationsService, AutomationsService, SchedulerService],
   exports: [CommunicationsService, AutomationsService, SchedulerService],

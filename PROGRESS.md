@@ -375,3 +375,28 @@ Karim (12 Oct): after recording a payment the invoice "disappeared" from the inv
 - [x] **No hidden filters:** whenever a filter or chip is on, a line above the list says so in words ("Filtered — only matching invoices are shown: Status: Invoice issued…") with **Show every invoice**. Opening Invoices from the side menu always shows every invoice.
 - [x] **Payment status in words** (list, invoice page, Excel): *Invoice issued* (with or without instalments, until money arrives), *Partial payment*, *Instalment 1 of 3 paid*, *Instalment 2 of 3 paid*… (instalments are paid in order), *Paid*; also *Draft (not sent)*, *Written off*, *Refunded*, *Cancelled*. Overdue shows as an extra red pill next to the status. One rule in `invoiceStatusLabel` (`payment-state.ts`).
 - [x] **Tests** — 121 unit + 152 e2e. Checked on a local copy: filter "Invoice issued", record a payment → the invoice stays on top as "Partial payment · updated".
+
+## ✅ Completed — Move-up maths (two calendars), exact proration, payment reminders — 12 Oct 2026
+
+**Move-up calculation (Karim chose the two-calendar rule, 12 Oct).** Rechecked against the two live move-ups:
+- The old rule was (new list price − old list price) × the new team's sessions left. That counted the sessions given back on the new team's calendar.
+- The rule now, for the term option the family bought:
+  - new part = new list price × new team's sessions left from the move date ÷ its sessions in the option
+  - old part = old list price × old team's sessions not yet trained (from the move date, or the child's start if later) ÷ its sessions in the option
+  - difference = new part − old part, then the child's discount %. Each part is rounded to the fil.
+- LA-000004 (U12 Dev → U12 HPC, 16 Oct): 14,027 × 81/101 = 11,249.38 − 9,350 × 52/66 = 7,366.67 → **3,882.71** (was charged 3,750.95).
+- LA-000005 (U13 Dev → U13 White, 13 Oct): 14,027 × 81/93 = 12,217.06 − 9,350 × 54/66 = 7,650.00 → **4,567.06** (was charged 4,073.67).
+- Both live invoices are paid test records and are not changed. The move drawer and the move-up invoice line now show both parts.
+
+**Proration rounding fixed:** the share of sessions was rounded to 4 decimals before it multiplied the price, so a full season from 13 Oct cost AED 7,650.17 instead of 9,350 × 54/66 = 7,650.00. The share is now exact (registration, Add term, adjust invoice, moves).
+
+**Payment reminders:**
+- **Send reminder** on any invoice with money owed: pick Friendly reminder or Overdue follow-up, see the email exactly as the parent will, then send.
+- **Communications → Payment reminders:** Overdue / Due in the next 7 days / Everything owed, with what is due now (on a plan, the instalments due by today, or the next one), days overdue, last reminder and how many were sent. Send one, or select several.
+- **Reminder wording:** subject, heading and opening paragraph of each version can be edited, with placeholders, and reset to the original.
+- **The email:** the invoice's design — dark band with the real logo (852 × 235 px artwork at 170 px, sent inside the email so it shows without "load images"), red line, amount-due card, instalment table, button to the parent account, bank details. Logged as "Payment reminder".
+- The "Payment reminders" automation now sends this same email.
+
+**Invoice list:** keeps the last search again (Karim). The "Filtered — …" line with "Show every invoice" stays.
+
+**Tests:** 121 unit + 153 e2e.

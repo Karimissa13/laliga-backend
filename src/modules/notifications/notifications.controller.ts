@@ -12,7 +12,7 @@ export class EmailInvoiceDto {
   @ApiPropertyOptional({ description: 'Send to a different address this once (defaults to the parent)' })
   @IsOptional() @IsEmail() to?: string;
 }
-const EMAIL_KINDS = ['welcome', 'registered', 'invoice', 'report', 'payment_link'];
+const EMAIL_KINDS = ['welcome', 'registered', 'invoice', 'report', 'payment_link', 'reminder'];
 export class EmailLogQueryDto {
   @ApiPropertyOptional({ enum: EMAIL_KINDS }) @IsOptional() @IsIn(EMAIL_KINDS) kind?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() guardianId?: string;

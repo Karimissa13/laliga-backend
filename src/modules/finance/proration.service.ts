@@ -11,7 +11,7 @@ export interface Proration {
   sessionsLeft: number;
   /** Sessions in the whole purchase. */
   sessionsTotal: number;
-  /** sessionsLeft ÷ sessionsTotal, 4 decimals. */
+  /** sessionsLeft ÷ sessionsTotal, exact (never rounded before it multiplies a price). */
   ratio: number;
   /** How the sessions were counted: the team's planned sessions, or its training days on the calendar. */
   basis: 'team sessions' | 'training days' | 'days';
@@ -79,6 +79,6 @@ export class ProrationService {
     }
     if (!total) return null;
     if (!left) throw new BadRequestException('There are no sessions left from this start date.');
-    return { startDate, sessionsLeft: left, sessionsTotal: total, ratio: Math.round((left / total) * 10000) / 10000, basis };
+    return { startDate, sessionsLeft: left, sessionsTotal: total, ratio: left / total, basis };
   }
 }

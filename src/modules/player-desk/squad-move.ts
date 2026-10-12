@@ -4,11 +4,15 @@
  *
  * The price list charges by category and sessions a week, not by level: a move that
  * keeps the sessions a week (e.g. Development 2×/week → an Advanced team on Tue/Thu)
- * costs nothing. A move to more sessions is charged the difference between the two
- * list prices for what the family already bought (the same term option), prorated by
- * the new team's sessions left from the move date, with the child's existing discount
- * (sibling or manual %) applied to it. A move to fewer sessions may be credited the
- * same way (the desk decides — a coach's decision, not a refund request).
+ * costs nothing.
+ *
+ * Otherwise the two-calendar rule (Karim, 12 Oct 2026), for the same term option the
+ * family already bought:
+ *   new part  = new list price × new team's sessions left from the move date ÷ its sessions in the option
+ *   old part  = old list price × old team's sessions left from the move date ÷ its sessions in the option
+ *   difference = new part − old part      (each part rounded to the fil first)
+ * then the child's existing discount % (sibling or manual) is taken off the difference.
+ * Positive = to pay (move-up invoice); negative = may be credited (the desk decides).
  */
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -17,13 +21,18 @@ export interface MoveChargeInput {
   /** VAT-inclusive list price of the purchase at the old and the new sessions-a-week. */
   oldPrice: number;
   newPrice: number;
-  /** Share of the purchase's sessions left from the move date (1 = all of it). */
-  ratio: number;
+  /** Share of the OLD team's sessions in the purchase still to come from the move date (1 = all of it). */
+  oldRatio: number;
+  /** Share of the NEW team's sessions in the purchase from the move date (1 = all of it). */
+  newRatio: number;
   /** The child's discount on the original training fee, in % (0 if none). */
   discountPercent: number;
 }
 
 export interface MoveCharge {
+  /** New list price × new share, and old list price × old share (VAT inclusive, rounded to the fil). */
+  newPart: number;
+  oldPart: number;
   /** Difference before discount, VAT inclusive: positive = to pay, negative = may be credited. */
   gross: number;
   /** The child's discount on that difference (same sign as gross). */
@@ -33,13 +42,16 @@ export interface MoveCharge {
   direction: 'UP' | 'DOWN' | 'SAME';
 }
 
+const share = (x: number) => Math.min(1, Math.max(0, Number.isFinite(x) ? x : 1));
+
 export function moveCharge(i: MoveChargeInput): MoveCharge {
-  const ratio = Math.min(1, Math.max(0, i.ratio));
-  const gross = r2((i.newPrice - i.oldPrice) * ratio);
+  const newPart = r2(i.newPrice * share(i.newRatio));
+  const oldPart = r2(i.oldPrice * share(i.oldRatio));
+  const gross = r2(newPart - oldPart);
   const pct = Math.min(100, Math.max(0, i.discountPercent || 0));
   const discount = r2(gross * pct / 100);
   const amount = r2(gross - discount);
-  return { gross, discount, amount, direction: Math.abs(amount) < 0.005 ? 'SAME' : amount > 0 ? 'UP' : 'DOWN' };
+  return { newPart, oldPart, gross, discount, amount, direction: Math.abs(amount) < 0.005 ? 'SAME' : amount > 0 ? 'UP' : 'DOWN' };
 }
 
 /**

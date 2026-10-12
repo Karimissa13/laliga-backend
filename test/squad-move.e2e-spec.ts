@@ -56,7 +56,13 @@ describe('Squad moves (e2e)', () => {
     expect(q.groups).toHaveLength(1);
     expect(q.groups[0]).toMatchObject({ fromSessions: 2, toSessions: 3, invoiceNumber: before.number, package: 'FULL' });
     expect(q.toPay).toBeGreaterThan(0);
-    expect(q.toPay).toBeLessThanOrEqual(14027 - 9350);           // never more than the full difference
+    // Two calendars: new price × the HPC sessions left, less old price × the Development sessions not yet trained.
+    const g = q.groups[0];
+    expect([g.oldPrice, g.newPrice]).toEqual([9350, 14027]);
+    expect(g.sessionsTotal).toBeGreaterThan(g.oldSessionsTotal);              // 3×/week vs 2×/week calendars
+    expect(g.charge.newPart).toBeCloseTo(14027 * g.sessionsLeft / g.sessionsTotal, 2);
+    expect(g.charge.oldPart).toBeCloseTo(9350 * g.oldSessionsLeft / g.oldSessionsTotal, 2);
+    expect(q.toPay).toBeCloseTo(g.charge.newPart - g.charge.oldPart, 2);
     expect(q.groups[0].remainingDueDates.length).toBeGreaterThanOrEqual(2);
 
     const r = (await request(http).post(`/api/v1/players/${f.player.id}/move`).set(auth())

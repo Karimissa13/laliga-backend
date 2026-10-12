@@ -325,6 +325,7 @@ table.dir td.em{max-width:200px;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:860px){.dadmin,.dfin{grid-template-columns:1fr}}
 .dcard{padding:14px 16px;min-width:0;display:flex;flex-direction:column}
 /* Dashboard: cards and blocks that open the report behind them */
+.remframe{height:620px}
 .dlink{cursor:pointer;transition:border-color .15s,box-shadow .15s,background .15s}
 .card.dlink:hover{border-color:var(--coral);box-shadow:0 2px 10px rgba(0,0,0,.06)}
 .pr.dlink:hover,.ptile.dlink:hover,.unp.dlink:hover,.aging .dlink:hover{background:var(--surface-2)}

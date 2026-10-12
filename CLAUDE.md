@@ -28,7 +28,7 @@ npm run build
 DATABASE_URL=postgresql://… DB_SYNCHRONIZE=false node dist/database/migrate.js
 node dist/database/seed.js && node dist/database/seed-academy.js
 npm test                       # unit (121)
-npm run test:e2e               # e2e (152) — needs a seeded DB in DATABASE_URL
+npm run test:e2e               # e2e (153) — needs a seeded DB in DATABASE_URL
 npm run db:migration:check     # fails if entities changed without a migration
 ```
 Test logins on a non-live DB: admin@laligaacademy.local / Admin@12345, sergio@laligaacademy.local / Coach@12345.
@@ -68,6 +68,7 @@ Run the e2e suite on a **fresh, seeded** database (some suites assume the seed's
 | "Today" | `src/common/dubai-date.ts` (`dubaiToday`, `dubaiDatePlus`) — never `new Date().toISOString().slice(0, 10)` (UTC is a day behind before 4 am) |
 | Squad moves (move-up invoice, move-down credit) | `src/modules/player-desk/squad-move.ts` (pure), `squad-move.service.ts`; replaced enrolments keep the term invoice (`movedFromId`), the PDF of a term invoice ignores their replacements |
 | Dashboard cards → reports (revenue, kit sales, wallet ledger) | `dashboard-overview.service.ts` (`revenueReport`, `kitSales`, `walletLedger`); UI `ACT.d*` in `public/app.js`; invoice list `seasonId`/`billed` filters |
+| Payment reminders (invoice "Send reminder", Communications → Payment reminders, editable wording) | `src/modules/notifications/payment-reminders.service.ts`, `reminder-email.ts` (branded email, logo inline as cid) |
 | Trials & date-of-birth range | `TRIAL_LEVEL`/`TRIAL_WEEKDAYS` in `leads.service.ts`; `birthDateRange` in `people/age-group.util.ts` |
 
 History of every build and decision: `PROGRESS.md`. The Claude Project "LaLiga Backend Enhancement" holds one doc

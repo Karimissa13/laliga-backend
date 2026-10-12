@@ -41,7 +41,9 @@ interface GroupQuote {
   fromTeam: string | null; fromLevel: string | null; fromSessions: number; toSessions: number;
   terms: Array<{ id: string; name: string; enrolmentId: string }>;
   oldPrice: number | null; newPrice: number | null;
+  /** The new team's sessions from the move date / in the option, and the old team's. */
   sessionsLeft: number | null; sessionsTotal: number | null; ratio: number;
+  oldSessionsLeft: number | null; oldSessionsTotal: number | null; oldRatio: number;
   discountPercent: number; discountLabel: string | null;
   charge: MoveCharge;
   priceNote: string | null;
@@ -147,8 +149,9 @@ export class SquadMoveService {
         terms: moving.sort((a, b) => String(a.term.startDate).localeCompare(String(b.term.startDate)))
           .map((e) => ({ id: e.termId, name: e.term.name, enrolmentId: e.id })),
         oldPrice: null, newPrice: null, sessionsLeft: null, sessionsTotal: null, ratio: 1,
+        oldSessionsLeft: null, oldSessionsTotal: null, oldRatio: 1,
         discountPercent: 0, discountLabel: null,
-        charge: { gross: 0, discount: 0, amount: 0, direction: 'SAME' }, priceNote: null, remainingDueDates: [],
+        charge: { newPart: 0, oldPart: 0, gross: 0, discount: 0, amount: 0, direction: 'SAME' }, priceNote: null, remainingDueDates: [],
       };
       if (!inv || inv.status === InvoiceStatus.CANCELLED) {
         g.priceNote = 'Not invoiced — the move changes the team only.';
@@ -169,16 +172,24 @@ export class SquadMoveService {
         };
         g.oldPrice = await price(fromSessions, first.team ?? null);
         g.newPrice = await price(toSessions, toTeam);
-        const pr = await this.proration.forPurchase(sortedAll.map((e) => e.term), toTeam, moveDate);
+        // Two calendars: the new team's sessions left from the move date, and the old team's
+        // sessions not yet trained (from the move date, or the child's own start if later).
+        const optionTerms = sortedAll.map((e) => e.term);
+        const pr = await this.proration.forPurchase(optionTerms, toTeam, moveDate);
         g.ratio = pr ? pr.ratio : 1;
         g.sessionsLeft = pr?.sessionsLeft ?? null; g.sessionsTotal = pr?.sessionsTotal ?? null;
+        const childStart = sortedAll.map((e) => e.startDate).filter(Boolean).sort()[0] as string | undefined;
+        const oldFrom = childStart && childStart > moveDate ? childStart : moveDate;
+        const opr = await this.proration.forPurchase(optionTerms, first.team ?? null, oldFrom).catch(() => null);
+        g.oldRatio = opr ? opr.ratio : 1;
+        g.oldSessionsLeft = opr?.sessionsLeft ?? null; g.oldSessionsTotal = opr?.sessionsTotal ?? null;
         // The child's discount on the term invoice (sibling or manual — they never stack).
         const unit = (inv.lineItems || []).filter((l) => l.playerId === playerId && l.stream === RevenueStream.ACADEMY && !l.productId)
           .reduce((s, l) => s + Number(l.unitAmount), 0);
         const disc = (inv.discounts || []).filter((d) => d.playerId === playerId);
         g.discountPercent = discountPercentOf(unit, disc.reduce((s, d) => s + Number(d.amount), 0));
         g.discountLabel = disc.length ? disc.map((d) => d.label).join(', ') : null;
-        g.charge = moveCharge({ oldPrice: g.oldPrice, newPrice: g.newPrice, ratio: g.ratio, discountPercent: g.discountPercent });
+        g.charge = moveCharge({ oldPrice: g.oldPrice, newPrice: g.newPrice, oldRatio: g.oldRatio, newRatio: g.ratio, discountPercent: g.discountPercent });
         // Remaining instalment dates of the term invoice, for splitting a move-up the same way.
         const plan = await this.instalments.summary(inv.id).catch(() => null);
         if (plan?.hasPlan) {
@@ -226,7 +237,8 @@ export class SquadMoveService {
           const discountNet = r2(grossNet * g.discountPercent / 100);
           const netLine = r2(grossNet - discountNet);
           const vat = lineVat(netLine, vatRate, g.charge.gross, discountNet > 0);
-          const sessions = g.sessionsLeft != null ? ` (${g.sessionsLeft} of ${g.sessionsTotal} sessions left)` : '';
+          const sessions = g.sessionsLeft != null
+            ? ` (new team: ${g.sessionsLeft} of ${g.sessionsTotal} sessions left${g.oldSessionsLeft != null ? `; unused in old team: ${g.oldSessionsLeft} of ${g.oldSessionsTotal}` : ''})` : '';
           const inv = await m.getRepository(Invoice).save(m.getRepository(Invoice).create({
             number: await this.refs.next('LA'), guardianId: player.guardianId,
             type: InvoiceType.ADDITIONAL, purpose: 'MOVE_UP', relatedInvoiceId: g.invoiceId,

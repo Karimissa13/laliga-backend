@@ -134,11 +134,9 @@ function navPush() {
 }
 /** Before showing screen `k`: remember the one we leave, unless this is a fresh start or a step back. */
 function navBefore(k, opts, same) {
-  if (opts.root) {
-    NAV.length = 0;
-    // From the side menu the invoice list opens unfiltered, so nothing is hidden by an old search.
-    if (k === 'invoices') { IF = { page: 1, wide: IF.wide, sort: '', dir: '', quick: '' }; INV_SEL.clear(); INV_ALL = null; INV_KEEP.clear(); }
-  }
+  // The side menu starts a fresh trail; each list keeps its last search (Karim, 12 Oct) —
+  // the invoice list says which filters are on, with "Show every invoice".
+  if (opts.root) NAV.length = 0;
   else if (!opts.back && !same) {
     const top = NAV[NAV.length - 1];
     if (top && top.k === k && !top.id && !top.report) NAV.pop();   // e.g. "← All players" from a player
@@ -1281,9 +1279,9 @@ async function mvQuote() {
       <div><b>${esc(g.packageLabel || g.terms.map((t) => t.name).join(', '))}</b>${g.invoiceNumber ? ` · term invoice <span class="ref">${esc(g.invoiceNumber)}</span>` : ''}</div>
       <div class="mini">${esc(g.fromTeam || '—')} (${g.fromSessions}×/week) → ${esc(q.toTeam.name)} (${g.toSessions}×/week) · terms moved: ${esc(g.terms.map((t) => t.name).join(', '))}</div>
       ${g.priceNote ? `<div class="note ${/Can't/.test(g.priceNote) ? 'bad' : 'info'}" style="margin-top:8px">${esc(g.priceNote)}</div>` : `<div class="quote" style="margin-top:8px">
-        ${line(`List price ${g.fromSessions}×/week`, money(g.oldPrice))}${line(`List price ${g.toSessions}×/week`, money(g.newPrice))}
-        ${line('Share left from ' + dmy(q.moveDate), g.sessionsLeft != null ? `${g.sessionsLeft} of ${g.sessionsTotal} sessions (${Math.round(g.ratio * 100)}%)` : 'all of it')}
-        ${line('Difference for that share', money(g.charge.gross))}
+        ${line(`New: ${esc(q.toTeam.name)} ${g.toSessions}×/week — ${money(g.newPrice)} × ${g.sessionsLeft != null ? `${g.sessionsLeft}/${g.sessionsTotal} sessions left` : 'all sessions'}`, money(g.charge.newPart))}
+        ${line(`Less unused: ${esc(g.fromTeam || '—')} ${g.fromSessions}×/week — ${money(g.oldPrice)} × ${g.oldSessionsLeft != null ? `${g.oldSessionsLeft}/${g.oldSessionsTotal} sessions not yet trained` : 'all sessions'}`, '− ' + money(g.charge.oldPart))}
+        ${line('Difference', money(g.charge.gross))}
         ${g.discountPercent ? line(`Same discount as before (${g.discountPercent}%)`, '− ' + money(Math.abs(g.charge.discount))) : ''}
         ${line(g.charge.amount >= 0 ? '<b>To pay</b>' : '<b>Could be credited</b>', `<b>${money(Math.abs(g.charge.amount))}</b>`, 'tot')}</div>`}
     </div>`).join('');
@@ -2869,8 +2867,12 @@ window.evalDiscounts = async () => {
 
 VIEWS.comms = async () => {
   const [autos, hist] = await Promise.all([api('/automations').catch(()=>[]), api('/communications').catch(()=>[])]);
-  $('view').innerHTML = `
-    <div class="sec" style="margin-top:0"><h3>Automations <span class="cnt">preview before sending</span></h3>
+  $('view').innerHTML = `${can('invoice.view') ? `<div class="sec" style="margin-top:0"><h3>Payment reminders <span class="cnt">follow up what is owed</span></h3>
+      <div class="card filters"><div class="fbar" style="flex-wrap:wrap;gap:8px"><span class="seg">${[['overdue', 'Overdue'], ['due7', 'Due in the next 7 days'], ['all', 'Everything owed']].map(([k, l]) => `<button class="${RMF.show === k ? 'on' : ''}" data-act="rmShow" data-a1="${k}">${l}</button>`).join('')}</span>
+        <input class="in" id="rm-q" style="max-width:280px" placeholder="Invoice, parent, child or email" value="${esc(RMF.search)}">
+        <button class="btn sm ghost" data-act="rmWording" style="margin-left:auto">Reminder wording</button></div></div>
+      <div id="rm-box"><div class="loading">Loading…</div></div></div>` : ''}
+    <div class="sec"><h3>Automations <span class="cnt">preview before sending</span></h3>
       <div class="grid g2">${autos.map(a=>`<div class="card" style="padding:15px">
         <b style="font-family:Archivo">${esc(a.name)}</b><div class="mini" style="margin:3px 0 10px">${esc(a.description)}</div>
         <div style="display:flex;gap:7px"><button class="btn sm ghost" data-act="runAuto" data-a1="${a.key}" data-a2="true">Preview</button>
@@ -2884,7 +2886,106 @@ VIEWS.comms = async () => {
       <tbody>${hist.slice(0,40).map(c=>`<tr><td class="ref">${dtm(c.createdAt)}</td><td><span class="chip">${esc(c.channel)}</span></td>
         <td>${esc(c.toAddress)}</td><td>${esc(c.subject||'—')}</td><td>${statusPill(c.status)}</td></tr>`).join('') || '<tr><td class="empty">Nothing sent yet.</td></tr>'}</tbody></table></div>
     </div>`;
+  const q = $('rm-q'); if (q) q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { RMF.search = q.value.trim(); loadReminders(); } });
+  loadReminders();
 };
+// ---------- payment reminders ----------
+// From an invoice ("Send reminder") or Communications → Payment reminders. Staff see the
+// email exactly as the parent will before it goes; every reminder is in the email log.
+const REM_KIND = { friendly: 'Friendly reminder', overdue: 'Overdue follow-up' };
+let REM = null;   // { id, number, kind }
+ACT.invReminder = async (id, number) => { REM = { id, number: number || '', kind: '' }; await remPreview(); };
+async function remPreview() {
+  let r;
+  try { r = await api(`/invoices/${REM.id}/reminder/preview${REM.kind ? '?kind=' + REM.kind : ''}`); }
+  catch (e) { return toast(e.message); }
+  REM.kind = r.kind;
+  openDrawer(`Payment reminder${REM.number ? ' — ' + REM.number : ''}`, `
+    <div class="frm"><div><label class="lbl" for="rem-kind">Message</label><select class="sel" id="rem-kind">${Object.entries(REM_KIND).map(([k, v]) => opt(k, v, k === r.kind)).join('')}</select></div>
+      <div><span class="lbl">To</span><div style="padding-top:6px">${r.to ? esc(r.to) : '<span class="bad">no email address on file</span>'}</div></div></div>
+    <div class="note info" style="margin:10px 0">${esc(r.what)} · <b>${money(r.amountDue)}</b> · due ${r.dueDate ? dmy(r.dueDate) : '—'}${r.daysOverdue ? ` · <b class="bad">${r.daysOverdue} days overdue</b>` : ''}</div>
+    <div class="mini" style="margin-bottom:6px">Subject: <b>${esc(r.subject)}</b></div>
+    <iframe class="emframe remframe" sandbox="" title="Reminder preview"></iframe>
+    <div id="rem-err" style="margin-top:8px"></div>
+    <div class="row-end"><button class="btn ghost" data-act="showInvoice" data-a1="${REM.id}">← Back to the invoice</button>
+      ${can('communication.create') ? `<button class="btn" id="rem-go" data-act="remSend" ${r.to ? '' : 'disabled'}>Send reminder</button>` : ''}</div>`, true);
+  document.querySelector('.remframe').srcdoc = r.html;
+  $('rem-kind').addEventListener('change', (e) => { REM.kind = e.target.value; remPreview(); });
+}
+ACT.remSend = async () => {
+  const go = $('rem-go'); if (go) go.disabled = true;
+  try {
+    const r = await api(`/invoices/${REM.id}/reminder`, { method: 'POST', body: JSON.stringify({ kind: REM.kind }) });
+    toast(r.sent ? `Reminder sent to ${r.to}` : r.simulated ? 'Reminder recorded in the email log (email is not connected yet)' : 'Reminder could not be sent: ' + (r.error || ''));
+    window.showInvoice(REM.id);
+    if (CURRENT === 'comms') loadReminders();
+  } catch (e) { $('rem-err').innerHTML = `<div class="note bad">${esc(e.message)}</div>`; if (go) go.disabled = false; }
+};
+
+// Communications → Payment reminders: everyone who owes money, what is due now, last reminder.
+let RMF = { show: 'overdue', search: '' }, RM_SEL = new Set(), RM_ROWS = [];
+async function loadReminders() {
+  const box = $('rm-box'); if (!box) return;
+  const qs = new URLSearchParams({ show: RMF.show }); if (RMF.search) qs.set('search', RMF.search);
+  let d;
+  try { d = await api('/payment-reminders?' + qs); } catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  RM_ROWS = d.data; for (const id of [...RM_SEL]) if (!RM_ROWS.some((r) => r.id === id)) RM_SEL.delete(id);
+  const n = RM_SEL.size, canSend = can('communication.create');
+  box.innerHTML = `<div class="totbar"><span><b>${d.count}</b> invoice${d.count === 1 ? '' : 's'}</span><span>Due now <b class="bad">${money(d.totals.dueNow)}</b></span>
+      <span>Total owed <b>${money(d.totals.balance)}</b></span><span>Overdue <b>${d.totals.overdue}</b></span>
+      ${canSend ? `<span style="margin-left:auto"><button class="btn sm" data-act="rmSendSel" ${n ? '' : 'disabled'}>Send reminders to selected (${n})</button></span>` : ''}</div>
+    <div class="card tblwrap"><table id="rm-tbl" class="dir"><thead><tr>
+      ${canSend ? `<th data-col="x"><input type="checkbox" id="rm-all" aria-label="Select all" ${n && n === RM_ROWS.filter((r) => r.email).length ? 'checked' : ''}></th>` : ''}
+      <th data-col="n">Invoice</th><th data-col="p">Parent</th><th data-col="c">Child</th><th data-col="w">Payment</th><th data-col="d">Due</th>
+      <th data-col="a" class="num">Due now</th><th data-col="b" class="num">Balance</th><th data-col="l">Last reminder</th><th data-col="act"></th></tr></thead>
+      <tbody>${RM_ROWS.map((r) => `<tr>
+        ${canSend ? `<td><input type="checkbox" data-rm="${r.id}" ${RM_SEL.has(r.id) ? 'checked' : ''} ${r.email ? '' : 'disabled title="No email address"'} aria-label="Select ${esc(r.number)}"></td>` : ''}
+        <td><a class="lnk ref" data-act="showInvoice" data-a1="${r.id}">${esc(r.number)}</a></td>
+        <td>${esc(r.parent)}<div class="mini">${r.email ? esc(r.email) : '<span class="bad">no email</span>'}</div></td>
+        <td title="${esc(r.children || '')}">${esc(r.children || '—')}</td><td>${esc(r.what)}</td>
+        <td>${r.nextDueDate ? dmy(r.nextDueDate) : '—'}<div class="mini">${r.daysOverdue ? `<b class="bad">${r.daysOverdue} days overdue</b>` : r.daysToDue === 0 ? 'due today' : r.daysToDue != null ? `in ${r.daysToDue} days` : ''}</div></td>
+        <td class="num"><b>${money(r.dueNow)}</b></td><td class="num">${money(r.balance)}</td>
+        <td>${r.lastReminderAt ? `${dtm(r.lastReminderAt)}<div class="mini">${r.reminders} sent</div>` : '<span class="mini">never</span>'}</td>
+        <td><button class="btn sm ghost" data-act="invReminder" data-a1="${r.id}" data-a2="${esc(r.number)}">Preview &amp; send</button></td></tr>`).join('')
+        || `<tr><td colspan="10" class="empty">${RMF.show === 'overdue' ? 'Nothing is overdue.' : RMF.show === 'due7' ? 'Nothing falls due in the next 7 days.' : 'No invoice has money owed.'}</td></tr>`}</tbody></table></div>`;
+  box.querySelectorAll('[data-rm]').forEach((c) => c.addEventListener('change', () => { c.checked ? RM_SEL.add(c.dataset.rm) : RM_SEL.delete(c.dataset.rm); loadReminders(); }));
+  const all = $('rm-all'); if (all) all.addEventListener('change', () => { RM_SEL = new Set(all.checked ? RM_ROWS.filter((r) => r.email).map((r) => r.id) : []); loadReminders(); });
+  resizableTable($('rm-tbl'), 'reminders');
+}
+ACT.rmShow = (s) => { RMF.show = s; RM_SEL.clear(); document.querySelectorAll('[data-act="rmShow"]').forEach((b) => b.classList.toggle('on', b.dataset.a1 === s)); loadReminders(); };
+ACT.rmSendSel = async () => {
+  const ids = [...RM_SEL]; if (!ids.length) return;
+  if (!confirm(`Send a payment reminder to ${ids.length} famil${ids.length === 1 ? 'y' : 'ies'}? Each gets the friendly or overdue version for their invoice.`)) return;
+  let sent = 0, failed = 0;
+  for (let i = 0; i < ids.length; i += 25) {
+    try { const r = await api('/payment-reminders/send', { method: 'POST', body: JSON.stringify({ invoiceIds: ids.slice(i, i + 25) }) }); sent += r.sent; failed += r.failed; }
+    catch (e) { failed += ids.slice(i, i + 25).length; toast(e.message); }
+  }
+  toast(`${sent} reminder${sent === 1 ? '' : 's'} recorded${failed ? ` · ${failed} failed` : ''}`); RM_SEL.clear(); loadReminders();
+};
+/** The reminder wording: subject, heading and opening paragraph, for each kind. */
+ACT.rmWording = async () => {
+  const w = await api('/payment-reminders/wording'), edit = can('communication.manage');
+  const block = (k) => `<h4 style="margin:16px 0 8px">${esc(REM_KIND[k])}</h4><div class="frm">
+    <div class="full"><label class="lbl" for="rw-${k}-subject">Subject</label><input class="in" id="rw-${k}-subject" maxlength="200" value="${esc(w[k].subject)}" ${edit ? '' : 'disabled'}></div>
+    <div class="full"><label class="lbl" for="rw-${k}-heading">Heading</label><input class="in" id="rw-${k}-heading" maxlength="120" value="${esc(w[k].heading)}" ${edit ? '' : 'disabled'}></div>
+    <div class="full"><label class="lbl" for="rw-${k}-intro">Opening paragraph</label><textarea class="in" id="rw-${k}-intro" rows="4" maxlength="1000" ${edit ? '' : 'disabled'}>${esc(w[k].intro)}</textarea></div></div>`;
+  openDrawer('Payment reminder wording', `<p class="mini" style="margin-top:0">The rest of the email (amount, due date, instalments, bank details, logo) is filled in from the invoice. You can use: ${w.placeholders.map((p) => `<code>${esc(p)}</code>`).join(' ')}</p>
+    ${block('friendly')}${block('overdue')}<div id="rw-err" style="margin-top:8px"></div>
+    <div class="row-end">${edit ? '<button class="btn ghost" data-act="rmWordingReset">Back to the original wording</button><button class="btn" data-act="rmWordingSave">Save</button>' : '<button class="btn" data-act="closeDrawer">Close</button>'}</div>`, true);
+};
+const rwRead = () => Object.fromEntries(['friendly', 'overdue'].map((k) => [k, { subject: $(`rw-${k}-subject`).value, heading: $(`rw-${k}-heading`).value, intro: $(`rw-${k}-intro`).value }]));
+ACT.rmWordingSave = async () => {
+  try { await api('/payment-reminders/wording', { method: 'POST', body: JSON.stringify(rwRead()) }); toast('Reminder wording saved'); closeDrawer(); }
+  catch (e) { $('rw-err').innerHTML = `<div class="note bad">${esc(e.message)}</div>`; }
+};
+ACT.rmWordingReset = async () => {
+  if (!confirm('Put back the original wording for both reminders?')) return;
+  const w = await api('/payment-reminders/wording');
+  try { await api('/payment-reminders/wording', { method: 'POST', body: JSON.stringify(w.defaults) }); toast('Original wording restored'); ACT.rmWording(); }
+  catch (e) { toast(e.message); }
+};
+
 window.runAuto = async (key, dryRun) => {
   const out = $('auto-'+key); out.innerHTML = '<div class="loading">Running…</div>';
   try{ const r = await api(`/automations/${key}`, {method:'POST', body: JSON.stringify({dryRun})});
@@ -3711,6 +3812,7 @@ window.showInvoice = async (id) => {
         ${i.status !== 'DRAFT' && can('invoice.edit') ? `<button class="btn sm ghost" data-act="invEmail" data-a1="${i.id}">${mine.length ? 'Resend email' : 'Email to parent'}</button>` : ''}
         ${i.status === 'DRAFT' && can('invoice.edit') ? `<button class="btn sm ghost" data-act="invIssue" data-a1="${i.id}">Issue</button>` : ''}
         ${open && can('payment.create') ? `<button class="btn sm ghost" data-act="invLinkCopy" data-a1="${i.id}">Copy payment link</button><button class="btn sm ghost" data-act="invLinkSend" data-a1="${i.id}">Send payment link</button>` : ''}
+        ${open && can('communication.view') ? `<button class="btn sm ghost" data-act="invReminder" data-a1="${i.id}" data-a2="${esc(i.number)}">Send reminder</button>` : ''}
       </div>
       <dl class="kv" style="margin-top:12px">
         <dt>Parent</dt><dd>${esc(i.guardian?.fullName || '—')} <span class="ref">${esc(i.guardian?.reference || '')}</span><div class="mini">${esc(i.guardian?.email || '')}</div></dd>
@@ -4073,7 +4175,7 @@ ACT.stkNewGo = async () => {
 };
 
 // ================= email log =================
-const KIND_WORD = { welcome: 'Welcome + sign-in', registered: 'Child registered', invoice: 'Invoice' };
+const KIND_WORD = { welcome: 'Welcome + sign-in', registered: 'Child registered', invoice: 'Invoice', reminder: 'Payment reminder', payment_link: 'Payment link', report: 'Term report' };
 VIEWS.emails = async () => {
   $('page-title').textContent = 'Email log';
   const [st, rows] = await Promise.all([api('/email/status'), api('/email/log?limit=300')]);

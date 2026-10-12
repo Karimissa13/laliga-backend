@@ -159,14 +159,20 @@ export class NotificationsService implements OnModuleInit {
   }
 
   /** Email a parent a message without an attachment (e.g. a payment link), copied to the additional email, and log it. */
-  async sendMessage(input: { guardianId: string; subject: string; html: string; text: string; kind: string; ref?: { type: string; id: string } }) {
+  async sendMessage(input: {
+    guardianId: string; subject: string; html: string; text: string; kind: string; ref?: { type: string; id: string };
+    /** Images shown inside the email (e.g. the logo as cid:laliga-logo). */
+    inline?: Array<{ filename: string; content: Buffer; contentType?: string; cid: string }>;
+    /** The HTML kept in the email log, when it differs from what is sent (e.g. the logo as a public path). */
+    logHtml?: string;
+  }) {
     const g = await this.guardians.findOne({ where: { id: input.guardianId } });
     if (!g?.email) throw new BadRequestException('This parent has no email address');
     const s = await this.settings.notifications();
     const cc = g.secondaryEmail ? [g.secondaryEmail] : undefined;
-    const r = await this.mailer.send({ to: g.email, cc, subject: input.subject, html: input.html, text: input.text, fromName: s.fromName, replyTo: s.replyTo });
+    const r = await this.mailer.send({ to: g.email, cc, subject: input.subject, html: input.html, text: input.text, fromName: s.fromName, replyTo: s.replyTo, attachments: input.inline });
     const row = await this.record({
-      guardianId: g.id, to: cc ? `${g.email}, ${cc.join(', ')}` : g.email, subject: input.subject, html: input.html, kind: input.kind, result: r,
+      guardianId: g.id, to: cc ? `${g.email}, ${cc.join(', ')}` : g.email, subject: input.subject, html: input.logHtml ?? input.html, kind: input.kind, result: r,
       attachments: input.ref ? [{ ...input.ref, fileName: '' }] : null,
     });
     return { id: row.id, to: row.toAddress, sent: r.ok && !r.simulated, simulated: r.simulated, error: r.error ?? null };

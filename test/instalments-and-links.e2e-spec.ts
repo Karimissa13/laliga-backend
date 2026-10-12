@@ -147,6 +147,41 @@ describe('Instalments and payment links (e2e)', () => {
     expect((await request(http).get(`/api/v1/invoices/${inv.id}`).set(auth())).body.amountPaid).toBe(paidBefore);
   });
 
+  it('sends a branded payment reminder from the invoice and from Communications (Oct 2026)', async () => {
+    // The reminder asks for what is due now on the plan (an instalment), with the real logo.
+    const pv = (await request(http).get(`/api/v1/invoices/${inv.id}/reminder/preview`).set(auth()).expect(200)).body;
+    expect(['friendly', 'overdue']).toContain(pv.kind);
+    expect(pv.to).toBe(g.email);
+    expect(pv.subject).toContain(inv.number);
+    expect(pv.what).toMatch(/^Instalments? \d/);
+    expect(pv.html).toContain('/brand/logo-on-dark.png');
+    expect(pv.html).toContain('width="170"');                        // 852 px artwork shown at 170 px: sharp
+    expect(pv.html).toContain('Instalment 1');
+    const ov = (await request(http).get(`/api/v1/invoices/${inv.id}/reminder/preview?kind=overdue`).set(auth()).expect(200)).body;
+    expect(ov.subject).toMatch(/^Payment overdue/);
+
+    const sent = (await request(http).post(`/api/v1/invoices/${inv.id}/reminder`).set(auth()).send({}).expect(201)).body;
+    expect(sent.invoice).toBe(inv.number);
+    const log = (await request(http).get(`/api/v1/email/log?kind=reminder&guardianId=${g.id}`).set(auth()).expect(200)).body;
+    expect(log.length).toBeGreaterThanOrEqual(1);
+    const body = (await request(http).get(`/api/v1/email/log/${log[0].id}/body`).set(auth()).expect(200)).body.html;
+    expect(body).not.toContain('cid:');                               // the log shows the logo from /brand/
+
+    const list = (await request(http).get(`/api/v1/payment-reminders?show=all&search=${encodeURIComponent(inv.number)}`).set(auth()).expect(200)).body;
+    const row = list.data.find((r: any) => r.id === inv.id);
+    expect(row.reminders).toBeGreaterThanOrEqual(1);
+    expect(row.dueNow).toBeGreaterThan(0);
+    const many = (await request(http).post('/api/v1/payment-reminders/send').set(auth()).send({ invoiceIds: [inv.id] }).expect(201)).body;
+    expect(many.sent).toBe(1);
+
+    // The wording can be changed (placeholders filled in) and put back.
+    const w = (await request(http).get('/api/v1/payment-reminders/wording').set(auth()).expect(200)).body;
+    await request(http).post('/api/v1/payment-reminders/wording').set(auth()).send({ friendly: { subject: 'Hello {parent} — {invoice}' } }).expect(201);
+    const pv2 = (await request(http).get(`/api/v1/invoices/${inv.id}/reminder/preview?kind=friendly`).set(auth())).body;
+    expect(pv2.subject).toBe(`Hello ${g.fullName} — ${inv.number}`);
+    await request(http).post('/api/v1/payment-reminders/wording').set(auth()).send(w.defaults).expect(201);
+  });
+
   it('refuses a link on a draft invoice and on a paid instalment', async () => {
     await request(http).post(`/api/v1/invoices/${inv.id}/payment-link`).set(auth()).send({ instalmentSeq: 1 }).expect(400);
     const kid2 = (await request(http).post('/api/v1/players').set(auth()).send({ guardianId: g.id, firstName: 'Dina', lastName: `Inst${uniq}`, gender: 'FEMALE', dateOfBirth: '2016-05-01', sendWelcome: false }).expect(201)).body;

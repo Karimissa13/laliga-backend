@@ -6,6 +6,7 @@ import {
   Lead, LeadStatus, Player, PlayerStatus, Session, Term,
 } from '../../database/entities';
 import { CommunicationsService } from './communications.service';
+import { PaymentRemindersService } from '../notifications/payment-reminders.service';
 import { AuditService } from '../../audit/audit.service';
 
 export interface AutomationResult {
@@ -33,6 +34,7 @@ export class AutomationsService {
     @InjectRepository(Term) private readonly terms: Repository<Term>,
     @InjectRepository(Guardian) private readonly guardians: Repository<Guardian>,
     private readonly comms: CommunicationsService,
+    private readonly reminders: PaymentRemindersService,
     private readonly audit: AuditService,
   ) {}
 
@@ -60,7 +62,10 @@ export class AutomationsService {
         invoice: inv.number, guardian: inv.guardian.fullName,
         balance: Math.round(this.balance(inv) * 100) / 100, daysOverdue: days,
       };
-      if (!dryRun) {
+      if (!dryRun && channel === CommunicationChannel.EMAIL && inv.guardian.email) {
+        // By email: the same branded reminder as "Send reminder" on an invoice (logged as kind "reminder").
+        try { await this.reminders.send(inv.id, { kind: 'overdue' }); sent++; } catch (e: any) { this.logger.warn(`Reminder for ${inv.number}: ${e?.message}`); }
+      } else if (!dryRun) {
         await this.comms.sendToGuardian({
           guardian: inv.guardian, channel,
           subject: `Payment reminder — invoice {{invoice}}`,
