@@ -27,8 +27,8 @@ npm run build
 # local DB (Docker gives one):  docker compose up      → http://localhost:3000
 DATABASE_URL=postgresql://… DB_SYNCHRONIZE=false node dist/database/migrate.js
 node dist/database/seed.js && node dist/database/seed-academy.js
-npm test                       # unit (71)
-npm run test:e2e               # e2e (141) — needs a seeded DB in DATABASE_URL
+npm test                       # unit (118)
+npm run test:e2e               # e2e (151) — needs a seeded DB in DATABASE_URL
 npm run db:migration:check     # fails if entities changed without a migration
 ```
 Test logins on a non-live DB: admin@laligaacademy.local / Admin@12345, sergio@laligaacademy.local / Coach@12345.

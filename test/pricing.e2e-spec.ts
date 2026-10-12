@@ -65,12 +65,17 @@ describe('Price list, term options and extras (e2e)', () => {
     const team = teamFor('U10', 'DEVELOPMENT');
     const o = (await request(http).get(`/api/v1/registration/options?ageGroupId=${ag.id}&teamId=${team.id}`).set(auth()).expect(200)).body;
     expect(o.packages).toHaveLength(6);
-    expect(o.tiers.map((t: any) => t.sessionsPerWeek)).toEqual([1, 2]);   // 3 a week is Advanced & HPC only
+    expect(o.tiers.map((t: any) => t.sessionsPerWeek)).toEqual([1, 2, 3]);   // any level: whatever the price list has
     expect(o.defaultSessionsPerWeek).toBe(2);                            // Tue & Thu
     expect(o.products.map((p: any) => p.code)).toEqual(['KIT-DEV', 'MCL']);
     const hpc = teamFor('U12', 'HPC');
     const o2 = (await request(http).get(`/api/v1/registration/options?teamId=${hpc.id}`).set(auth()).expect(200)).body;
-    expect(o2.tiers.map((t: any) => t.sessionsPerWeek)).toEqual([3]);
+    expect(o2.tiers.map((t: any) => t.sessionsPerWeek)).toEqual([1, 2, 3]);
+    expect(o2.defaultSessionsPerWeek).toBe(3);                           // Mon, Wed & Fri
+    // U6, U8 and Girls have no 3-a-week price, so it isn't offered to them.
+    const u8 = (await request(http).get('/api/v1/age-groups').set(auth())).body.find((a: any) => a.code === 'U8');
+    const o3 = (await request(http).get(`/api/v1/registration/options?ageGroupId=${u8.id}&teamId=${teamFor('U8', 'ADVANCED').id}`).set(auth()).expect(200)).body;
+    expect(o3.tiers.map((t: any) => t.sessionsPerWeek)).toEqual([1, 2]);
     expect(o2.products.map((p: any) => p.code)).toEqual(['KIT-ADV', 'MCL']);
   });
 
@@ -86,9 +91,10 @@ describe('Price list, term options and extras (e2e)', () => {
     const withExtras = await q(`package=FULL&productIds=${products['KIT-DEV'].id},${products.MCL.id}`);
     expect(withExtras.extrasTotal).toBe(950);
     expect(withExtras.grandTotal).toBe(10300);
-    const no = await q('package=T1&sessionsPerWeek=3');
-    expect(no.ok).toBe(false);
-    expect(no.reason).toMatch(/isn't offered at Development/);
+    expect((await q('package=T1&sessionsPerWeek=3')).total).toBeGreaterThan(one.total);   // 3 a week at Development too
+    const u8 = (await request(http).get(`/api/v1/registration/quote?dob=2019-02-02&teamId=${teamFor('U8', 'DEVELOPMENT').id}&package=T1&sessionsPerWeek=3`).set(auth()).expect(200)).body;
+    expect(u8.ok).toBe(false);
+    expect(u8.reason).toMatch(/3 sessions a week isn't offered for U8/);
   });
 
   describe('a family buying a full season with extras', () => {

@@ -1,17 +1,19 @@
 import { Body, Controller, ForbiddenException, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsDateString, IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { Audit } from '../../common/decorators/audit.decorator';
 import { AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
-import { boolParam } from '../../common/query-params';
+import { boolParam, numParam } from '../../common/query-params';
 import { SquadMoveService } from './squad-move.service';
 
 export class MoveQuoteQueryDto {
   @ApiProperty() @IsUUID() toTeamId: string;
   @ApiPropertyOptional({ example: '2026-10-13', description: 'First day in the new team; today when omitted' })
   @IsOptional() @IsDateString() moveDate?: string;
+  @ApiPropertyOptional({ example: 3, description: "Sessions a week in the new team (1–3, if the price list has it); the team's schedule when omitted" })
+  @IsOptional() @Transform(numParam) @IsInt() @Min(1) @Max(3) sessionsPerWeek?: number;
 }
 
 export class MoveDto extends MoveQuoteQueryDto {

@@ -1103,33 +1103,41 @@ let SQM = null;
 const LEVEL_RANK_UI = { HPC: 0, ADVANCED: 1, DEVELOPMENT: 2 };
 ACT.pMove = async () => {
   const d = PLAYER; await loadLookups();
-  const cat = d.category?.code || d.team?.ageCodes?.[0] || null;
-  const teams = (LK.teams || []).filter((t) => t.isActive !== false && t.id !== d.team?.id)
-    .sort((a, b) => (cat && b.ageCodes?.includes(cat) ? 1 : 0) - (cat && a.ageCodes?.includes(cat) ? 1 : 0)
-      || (LEVEL_RANK_UI[a.level] ?? 9) - (LEVEL_RANK_UI[b.level] ?? 9) || band(a.ageCodes?.[0]) - band(b.ageCodes?.[0]) || a.name.localeCompare(b.name));
+  // A move stays within the child's own age category (U12 → U12 Advanced / U12 HPC).
+  const cat = d.category?.code || null;
+  const teams = (LK.teams || []).filter((t) => t.isActive !== false && t.id !== d.team?.id && cat && t.ageCodes?.includes(cat))
+    .sort((a, b) => (LEVEL_RANK_UI[a.level] ?? 9) - (LEVEL_RANK_UI[b.level] ?? 9) || a.name.localeCompare(b.name));
   const tomorrow = addDaysIso(dubaiToday(), 1);
-  SQM = { quote: null };
+  SQM = { quote: null, spw: null };
   openDrawer(`Move ${d.player.name} to another team`, `
     <p class="mini" style="margin-top:0">Now in <b>${esc(d.team?.name || 'no team')}</b>. History is kept. A move to more sessions a week is charged on its own <b>Squad move-up</b> invoice linked to the term invoice, which never changes.</p>
     <div class="frm">
-      <div class="full"><label class="lbl" for="mv-team">New team</label><select class="sel" id="mv-team">${opt('', 'Choose a team…')}${teams.map((t) =>
-        opt(t.id, `${t.name} · ${LEVEL_WORD[t.level] || t.level}${t.schedule ? ' · ' + t.schedule : ''}${cat && !t.ageCodes?.includes(cat) ? ' (other category)' : ''}`)).join('')}</select></div>
+      <div class="full"><label class="lbl" for="mv-team">New team (${esc(cat || 'no age category')} only)</label><select class="sel" id="mv-team">${opt('', teams.length ? 'Choose a team…' : 'No other ' + (cat || '') + ' team')}${teams.map((t) =>
+        opt(t.id, `${t.name} · ${LEVEL_WORD[t.level] || t.level}${t.schedule ? ' · ' + t.schedule : ''}`)).join('')}</select></div>
+      <div><label class="lbl" for="mv-spw">Sessions a week</label><select class="sel" id="mv-spw" disabled>${opt('', 'Choose the team first')}</select></div>
       <div><label class="lbl" for="mv-date">First day in the new team</label><input class="in" type="date" id="mv-date" value="${tomorrow}"></div>
       <div><label class="lbl" for="mv-reason">Reason</label><input class="in" id="mv-reason" maxlength="200" placeholder="e.g. Moved up after the October assessment"></div>
     </div>
     <div id="mv-quote" style="margin-top:12px"></div>
     <div id="mv-err" style="margin-top:10px"></div>
     <div class="row-end"><button class="btn ghost" data-act="closeDrawer">Cancel</button><button class="btn" id="mv-go" data-act="pMoveGo" disabled>Move</button></div>`, true);
-  for (const id of ['mv-team', 'mv-date']) $(id).addEventListener('change', mvQuote);
+  $('mv-team').addEventListener('change', () => { SQM.spw = null; mvQuote(); });
+  $('mv-date').addEventListener('change', mvQuote);
+  $('mv-spw').addEventListener('change', () => { SQM.spw = Number($('mv-spw').value) || null; mvQuote(); });
 };
 async function mvQuote() {
   const box = $('mv-quote'), go = $('mv-go'), teamId = $('mv-team').value, date = $('mv-date').value;
   $('mv-err').innerHTML = ''; go.disabled = true; SQM.quote = null;
-  if (!teamId) { box.innerHTML = ''; return; }
+  const spwSel = $('mv-spw');
+  if (!teamId) { box.innerHTML = ''; spwSel.innerHTML = opt('', 'Choose the team first'); spwSel.disabled = true; return; }
   box.innerHTML = '<div class="loading">Working out the price…</div>';
   try {
-    const q = await api(`/players/${PLAYER.player.id}/move/quote?toTeamId=${teamId}${date ? '&moveDate=' + date : ''}`);
+    const q = await api(`/players/${PLAYER.player.id}/move/quote?toTeamId=${teamId}${date ? '&moveDate=' + date : ''}${SQM.spw ? '&sessionsPerWeek=' + SQM.spw : ''}`);
     SQM.quote = q;
+    // The tiers the price list has for the child's category (U6, U8 and Girls: 1× or 2×).
+    spwSel.innerHTML = (q.tiers.length ? q.tiers : [q.toTeam.sessionsPerWeek]).map((n) =>
+      opt(String(n), `${n}× a week${n === q.toTeam.teamSessionsPerWeek ? ' (the team’s schedule)' : ''}`, String(n) === String(q.toTeam.sessionsPerWeek))).join('');
+    spwSel.disabled = false;
     const line = (k, v, cls) => `<div class="ql ${cls || ''}"><span>${k}</span><span>${v}</span></div>`;
     const groups = q.groups.map((g) => `<div class="card" style="padding:12px;margin-bottom:10px">
       <div><b>${esc(g.packageLabel || g.terms.map((t) => t.name).join(', '))}</b>${g.invoiceNumber ? ` · term invoice <span class="ref">${esc(g.invoiceNumber)}</span>` : ''}</div>
@@ -1159,7 +1167,7 @@ async function mvQuote() {
 ACT.pMoveGo = async () => {
   const q = SQM?.quote; if (!q) return;
   const go = $('mv-go'); go.disabled = true;
-  const body = { toTeamId: q.toTeam.id, moveDate: q.moveDate, reason: $('mv-reason').value.trim() || undefined,
+  const body = { toTeamId: q.toTeam.id, moveDate: q.moveDate, sessionsPerWeek: q.toTeam.sessionsPerWeek, reason: $('mv-reason').value.trim() || undefined,
     issue: $('mv-issue') ? $('mv-issue').checked : undefined,
     instalments: document.querySelector('input[name="mv-inst"]:checked')?.value || undefined,
     credit: $('mv-credit') ? $('mv-credit').checked : undefined };

@@ -35,6 +35,7 @@ dotenv.config();
 
 const TT = [Weekday.TUE, Weekday.THU];
 const MWF = [Weekday.MON, Weekday.WED, Weekday.FRI];
+const TWT = [Weekday.TUE, Weekday.WED, Weekday.THU];
 const EARLY = ['18:00', '19:30'] as const;
 const LATE = ['19:30', '21:00'] as const;
 
@@ -58,9 +59,9 @@ export const ACADEMY_TEAMS: TeamDef[] = [
   { ages: ['U8'], level: A, days: TT, slot: EARLY, cap: 12 },                       // new, Oct 2026
   { ages: ['U10'], level: D, n: 1, days: TT, slot: EARLY, cap: 12, was: 'U10 Development' },
   { ages: ['U9'], level: A, days: TT, slot: EARLY, cap: 12 },
-  { ages: ['U12'], level: A, squad: W, days: TT, slot: EARLY, cap: 14 },
+  { ages: ['U12'], level: A, squad: W, days: TWT, slot: EARLY, cap: 14 },   // 3x a week, Oct 2026
   // Tuesday & Thursday, 7:30–9:00 pm
-  { ages: ['U13'], level: A, squad: W, days: TT, slot: LATE, cap: 14 },
+  { ages: ['U13'], level: A, squad: W, days: TWT, slot: LATE, cap: 14 },    // 3x a week, Oct 2026
   { ages: ['U10'], level: D, n: 2, days: TT, slot: LATE, cap: 12 },                 // new, Oct 2026
   { ages: ['U12'], level: D, days: TT, slot: LATE, cap: 14 },
   { ages: ['U13'], level: D, days: TT, slot: LATE, cap: 14 },
@@ -199,6 +200,8 @@ async function reference() {
   const teamRepo = ds.getRepository(Team);
   const [capsRow] = await ds.query(`SELECT value FROM app_settings WHERE key = 'teamCapsVersion'`).catch(() => []);
   const capsApplied = capsRow?.value === TEAM_CAPS_VERSION;
+  // Teams whose training days or times change here get their future sessions re-planned below.
+  const rescheduled: string[] = [];
   for (const def of ACADEMY_TEAMS) {
     const name = teamLabel({ ageCodes: def.ages, level: def.level, squad: def.squad, squadNumber: def.n });
     const primary = ag.get(def.ages[0]);
@@ -215,7 +218,12 @@ async function reference() {
     // otherwise a capacity changed in the app is left alone.
     if (!existing || !capsApplied) shape.capacity = def.cap;
     if (!existing) await teamRepo.save(teamRepo.create(shape));
-    else await teamRepo.update(existing.id, shape);   // keeps an assigned coach
+    else {
+      const was = `${[...(existing.trainingDays ?? [])].join(',')} ${String(existing.startTime).slice(0, 5)}-${String(existing.endTime).slice(0, 5)}`;
+      const now = `${def.days.join(',')} ${def.slot[0]}-${def.slot[1]}`;
+      if (was !== now) rescheduled.push(existing.id);
+      await teamRepo.update(existing.id, shape);   // keeps an assigned coach
+    }
   }
   if (!capsApplied) {
     await ds.query(`INSERT INTO app_settings (key, value) VALUES ('teamCapsVersion', $1::jsonb)
@@ -338,6 +346,15 @@ async function reference() {
     }
     if (made) console.log(`  sessions: ${made} training sessions for ${teamsPlanned} team(s) (31 Aug 2026 – 11 Jun 2027)`);
     else console.log(`  sessions: every team already has its season`);
+    // A team whose days or times changed: from today, add the new sessions and remove
+    // future ones that no longer fit (never one with attendance or a trial booked on it).
+    const replan = rescheduled.filter((id) => planned.has(id));
+    if (replan.length) {
+      const { SeasonScheduleService } = await import('../modules/scheduling/season-schedule.service');
+      const { dubaiToday } = await import('../common/dubai-date');
+      const r = await new SeasonScheduleService(ds).generate({ seasonId: season.id, teamIds: replan, from: dubaiToday(), sync: true });
+      for (const b of r.byTeam) console.log(`  sessions: ${b.team} re-planned from today (+${b.created} / -${b.removed})`);
+    }
   }
 
   // ---- discounts ---------------------------------------------------------

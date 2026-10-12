@@ -51,6 +51,8 @@ describe('Players section (e2e)', () => {
       }
       expect(team('U12 HPC').schedule).toBe('Mon, Wed & Fri · 6:00–7:30 pm');
       expect(team('U14 Advanced Blue').schedule).toBe('Tue & Thu · 7:30–9:00 pm');
+      expect(team('U12 Advanced White').schedule).toBe('Tue, Wed & Thu · 6:00–7:30 pm');   // 3x a week, Oct 2026
+      expect(team('U13 Advanced White').schedule).toBe('Tue, Wed & Thu · 7:30–9:00 pm');
       expect(team('U16 HPC').schedule).toBe('Mon, Wed & Fri · 7:30–9:00 pm');
       expect(team('U16/18 Development').ageCodes).toEqual(['U16', 'U18']);
     });

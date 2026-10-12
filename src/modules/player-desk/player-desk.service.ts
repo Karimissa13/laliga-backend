@@ -12,7 +12,7 @@ import { ProrationService } from '../finance/proration.service';
 import { InstalmentsService } from '../finance/instalments.service';
 import { planProblem } from '../finance/instalments';
 import { DomainEvents } from '../../common/domain-events';
-import { PACKAGE_TERMS, defaultSessionsPerWeek, hoursPerSession, lineVat, splitIncl, tierAllowed } from '../finance/pricing';
+import { PACKAGE_TERMS, defaultSessionsPerWeek, hoursPerSession, lineVat, splitIncl } from '../finance/pricing';
 import { PlayersService } from '../people/players.service';
 import { EnrolmentService } from '../registration/enrolment.service';
 import { InvoicesService } from '../finance/invoices.service';
@@ -242,10 +242,6 @@ export class PlayerDeskService {
     let base: { list: number; incl: number | null; vatRate: number; label: string; spw: number | null; hours: number | null; category: string | null };
     if (ctx.usePriceList && ctx.pkg) {
       const spw = ctx.sessionsPerWeek ?? defaultSessionsPerWeek(ctx.team);
-      const level = ctx.team?.level ?? ctx.level ?? null;
-      if (!tierAllowed(level, spw)) {
-        return { ok: false as const, reason: `${spw} session${spw === 1 ? '' : 's'} a week isn't offered at ${level === 'HPC' ? 'HPC' : level === 'ADVANCED' ? 'Advanced' : 'Development'} level.` };
-      }
       const r = await this.pricing.resolve({
         seasonId: ctx.seasonId, package: ctx.pkg, sessionsPerWeek: spw, category: ctx.ageCode, girlsOnly: ctx.team?.girlsOnly,
       });
@@ -396,7 +392,6 @@ export class PlayerDeskService {
     const category = team?.girlsOnly ? 'GIRLS' : ag?.code ?? null;
     const tiers = list.tiers
       .filter((t) => !category || t.rows.some((r) => r.category === category && r.isActive))
-      .filter((t) => tierAllowed(level, t.sessionsPerWeek))
       .map((t) => ({ sessionsPerWeek: t.sessionsPerWeek, hoursPerSession: ag ? hoursPerSession(ag.code) : null }));
     const firstOpen = terms.findIndex((t) => (t.endDate ?? '') >= today);
     const defaultPackage = ([TermPackage.T1, TermPackage.T2, TermPackage.T3] as TermPackage[])[firstOpen] ?? TermPackage.T1;

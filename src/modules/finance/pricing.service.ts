@@ -76,7 +76,7 @@ export class PricingService {
       where: { seasonId: q.seasonId, sessionsPerWeek: q.sessionsPerWeek, category, isActive: true },
     });
     const tier = `${q.sessionsPerWeek} session${q.sessionsPerWeek === 1 ? '' : 's'} a week`;
-    if (!row) return { ok: false, reason: `The price list has no ${category} price for ${tier}.` };
+    if (!row) return { ok: false, reason: `${tier[0].toUpperCase()}${tier.slice(1)} isn't offered for ${category} — the price list has no price for it.` };
     const incl = Number(row.prices?.[q.package]);
     if (!incl) return { ok: false, reason: `The price list has no ${PACKAGE_LABEL[q.package]} price for ${category}, ${tier}.` };
     const vatRate = Number(row.vatRate);

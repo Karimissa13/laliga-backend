@@ -12,18 +12,19 @@ import { PaymentsService } from '../finance/payments.service';
 import { InstalmentsService } from '../finance/instalments.service';
 import { PricingService } from '../finance/pricing.service';
 import { ProrationService } from '../finance/proration.service';
-import { PACKAGE_LABEL, defaultSessionsPerWeek, lineVat, splitIncl, tierAllowed } from '../finance/pricing';
+import { PACKAGE_LABEL, defaultSessionsPerWeek, lineVat, splitIncl } from '../finance/pricing';
 import { discountPercentOf, evenPercents, moveCharge, MoveCharge } from './squad-move';
 import { dubaiToday, dubaiDatePlus } from '../../common/dubai-date';
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const dmy = (d: string) => d.split('-').reverse().join('/');
-const LEVEL_WORD: Record<string, string> = { DEVELOPMENT: 'Development', ADVANCED: 'Advanced', HPC: 'HPC' };
 
 export interface MoveOptions {
   toTeamId: string;
   /** First day in the new team (YYYY-MM-DD); today when omitted. */
   moveDate?: string;
+  /** Sessions a week in the new team (1, 2 or 3, if the price list has it); the team's schedule when omitted. */
+  sessionsPerWeek?: number;
   /** Issue (and auto-email, if switched on) the move-up invoice now; otherwise it stays a draft. Default true. */
   issue?: boolean;
   /** Move-up on an instalment plan: split over the original plan's remaining dates, or one payment. Default 'split'. */
@@ -77,7 +78,7 @@ export class SquadMoveService {
   ) {}
 
   /** What a move would do — nothing is saved. */
-  async quote(playerId: string, opts: Pick<MoveOptions, 'toTeamId' | 'moveDate'>) {
+  async quote(playerId: string, opts: Pick<MoveOptions, 'toTeamId' | 'moveDate' | 'sessionsPerWeek'>) {
     const moveDate = opts.moveDate || dubaiToday();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(moveDate)) throw new BadRequestException('The move date must be a date (YYYY-MM-DD).');
     const player = await this.players.findOne({ where: { id: playerId }, relations: { ageGroup: true, currentTeam: true } });
@@ -98,16 +99,31 @@ export class SquadMoveService {
     if (movable.every((e) => e.teamId === toTeam.id)) throw new BadRequestException(`${player.firstName} is already in ${toTeam.name}.`);
 
     const warnings: string[] = [];
+    // A move stays within the child's own age category (Karim, 12 Oct 2026): a U12
+    // goes from U12 Development to U12 Advanced or U12 HPC, never to another age group.
     const code = player.ageGroup?.code ?? null;
-    if (code && toTeam.ageCodes?.length && !toTeam.ageCodes.includes(code)) {
-      warnings.push(`${toTeam.name} is not ${code}'s category — ${player.firstName} would play ${Number(toTeam.ageCodes[0].replace(/\D/g, '')) > Number(code.replace(/\D/g, '')) ? 'up' : 'down'}.`);
+    if (!code) throw new BadRequestException(`${player.firstName} has no age category — check the date of birth first.`);
+    if (!toTeam.ageCodes?.includes(code)) {
+      throw new BadRequestException(`${toTeam.name} isn't a ${code} team — a move stays within ${player.firstName}'s age category (${code}).`);
     }
     if (player.currentTeamId !== toTeam.id) {
       const inTeam = await this.players.count({ where: { currentTeamId: toTeam.id } });
       if (toTeam.capacity && inTeam >= toTeam.capacity) throw new BadRequestException(`${toTeam.name} is full (${toTeam.capacity}).`);
     }
-    const toSessions = defaultSessionsPerWeek(toTeam);
-    if (!tierAllowed(toTeam.level, toSessions)) warnings.push(`${toTeam.name} trains ${toSessions}×/week, which the price list doesn't offer for ${LEVEL_WORD[toTeam.level] ?? toTeam.level}.`);
+    // Sessions a week: the new team's schedule unless another tier is chosen; the price
+    // list decides which tiers the category can buy (U6, U8 and Girls: 1 or 2 a week).
+    const category = toTeam.girlsOnly ? 'GIRLS' : code;
+    const list = await this.pricing.priceList(season.id);
+    const tiers = list.tiers
+      .filter((t) => t.rows.some((r) => r.category === category && r.isActive))
+      .map((t) => t.sessionsPerWeek).sort((a, b) => a - b);
+    const teamSessions = defaultSessionsPerWeek(toTeam);
+    const toSessions = opts.sessionsPerWeek ?? (tiers.length && !tiers.includes(teamSessions) ? tiers[tiers.length - 1] : teamSessions);
+    if (![1, 2, 3].includes(toSessions)) throw new BadRequestException('Sessions a week must be 1, 2 or 3.');
+    if (tiers.length && !tiers.includes(toSessions)) {
+      throw new BadRequestException(`${toSessions}×/week isn't offered for ${category} — the price list has ${tiers.map((t) => t + '×').join(', ')}.`);
+    }
+    if (toSessions !== teamSessions) warnings.push(`${toTeam.name} trains ${teamSessions}×/week; ${player.firstName} is charged for ${toSessions}×/week.`);
 
     // One group per purchase (term invoice); terms not yet invoiced move without a charge.
     const groups = new Map<string, Enrolment[]>();
@@ -181,7 +197,8 @@ export class SquadMoveService {
     return {
       player: { id: player.id, name: `${player.firstName} ${player.lastName}`, reference: player.reference, category: code },
       fromTeam: player.currentTeam?.name ?? null,
-      toTeam: { id: toTeam.id, name: toTeam.name, level: toTeam.level, sessionsPerWeek: toSessions },
+      toTeam: { id: toTeam.id, name: toTeam.name, level: toTeam.level, sessionsPerWeek: toSessions, teamSessionsPerWeek: teamSessions },
+      tiers,
       moveDate, groups: out, toPay, toCredit,
       direction: toPay > 0 ? 'UP' : toCredit > 0 ? 'DOWN' : 'SAME',
       warnings,

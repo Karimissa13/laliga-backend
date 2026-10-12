@@ -246,7 +246,7 @@ describe('Trials & Leads and season attendance (e2e)', () => {
     it('lists the day\'s registers across teams', async () => {
       const d = (await request(http).get('/api/v1/attendance/day?date=2026-09-01').set(auth()).expect(200)).body;
       expect(d.date).toBe('2026-09-01');
-      const tueThu = teams.filter((t) => /^Tue & Thu/.test(t.schedule)).length;
+      const tueThu = teams.filter((t) => /^Tue\b/.test(t.schedule)).length;   // 1 Sep 2026 is a Tuesday
       expect(d.sessions.filter((s: any) => s.type === 'TRAINING').length).toBe(tueThu);
       expect(d.sessions[0]).toHaveProperty('roster');
     });

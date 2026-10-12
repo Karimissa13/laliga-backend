@@ -96,13 +96,18 @@ describe('Squad moves (e2e)', () => {
     expect(prof.purchases[0].terms).toHaveLength(3);
   });
 
-  it('Development 2×/week → an Advanced team on Tue/Thu (2×/week): no invoice, the team changes', async () => {
+  it('U12 Advanced White trains 3×/week; staff may charge 1, 2 or 3 — at 2×/week there is no invoice', async () => {
     const f = await family('FULL', 'U12 Development');
     const adv = team('U12 Advanced White');
-    const q = (await request(http).get(`/api/v1/players/${f.player.id}/move/quote?toTeamId=${adv.id}&moveDate=${dubai(1)}`).set(auth()).expect(200)).body;
+    const q3 = (await request(http).get(`/api/v1/players/${f.player.id}/move/quote?toTeamId=${adv.id}&moveDate=${dubai(1)}`).set(auth()).expect(200)).body;
+    expect(q3.toTeam).toMatchObject({ sessionsPerWeek: 3, teamSessionsPerWeek: 3 });   // Tue, Wed & Thu
+    expect(q3.tiers).toEqual([1, 2, 3]);
+    expect(q3.direction).toBe('UP');
+    const q = (await request(http).get(`/api/v1/players/${f.player.id}/move/quote?toTeamId=${adv.id}&moveDate=${dubai(1)}&sessionsPerWeek=2`).set(auth()).expect(200)).body;
     expect(q.direction).toBe('SAME');
     expect(q.toPay).toBe(0);
-    const r = (await request(http).post(`/api/v1/players/${f.player.id}/move`).set(auth()).send({ toTeamId: adv.id, moveDate: dubai(1) }).expect(201)).body;
+    expect(q.warnings.join(' ')).toMatch(/trains 3×\/week/);
+    const r = (await request(http).post(`/api/v1/players/${f.player.id}/move`).set(auth()).send({ toTeamId: adv.id, moveDate: dubai(1), sessionsPerWeek: 2 }).expect(201)).body;
     expect(r.invoices).toHaveLength(0);
     expect(r.moved).toBe(3);
   });
@@ -118,6 +123,14 @@ describe('Squad moves (e2e)', () => {
     expect(r.credits[0].writtenOff + r.credits[0].toWallet).toBeCloseTo(q.toCredit, 1);
     const notes = (await request(http).get(`/api/v1/invoices/${f.invoice.id}/credit-notes`).set(auth()).expect(200)).body;
     expect(notes.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('keeps a move within the child’s own age category', async () => {
+    const f = await family('FULL', 'U12 Development');
+    const r = await request(http).get(`/api/v1/players/${f.player.id}/move/quote?toTeamId=${team('U13 HPC').id}&moveDate=${dubai(1)}`).set(auth()).expect(400);
+    expect(r.body.message).toMatch(/isn't a U12 team/);
+    await request(http).post(`/api/v1/players/${f.player.id}/move`).set(auth())
+      .send({ toTeamId: team('U13 Advanced White').id, moveDate: dubai(1) }).expect(400);
   });
 
   it('refuses a move to the team the child is already in', async () => {

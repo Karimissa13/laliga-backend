@@ -32,8 +32,8 @@ export class SeasonScheduleService {
   /**
    * Create the season's sessions for each team (or the given teams). Safe to run
    * again: a session already there is left alone. With `sync`, future sessions
-   * that no longer fit the team's schedule — and have no attendance yet — are
-   * removed, so a changed training day or time is picked up from today onwards.
+   * that no longer fit the team's schedule — and have no attendance and no trial
+   * booked on them — are removed, so a changed training day or time is picked up from today onwards.
    */
   async generate(input: { seasonId?: string; teamIds?: string[]; from?: string; to?: string; sync?: boolean }) {
     const { season, terms, closures } = await this.seasonContext(input.seasonId);
@@ -46,7 +46,8 @@ export class SeasonScheduleService {
     for (const t of teams) {
       const plan = planTeamSessions(t as any, terms, closures, { from: input.from, to: input.to });
       const existing: Array<{ id: string; startsAt: Date; marks: number }> = await this.ds.query(
-        `SELECT s.id, s."startsAt", (SELECT count(*)::int FROM attendances a WHERE a."sessionId" = s.id) AS marks
+        `SELECT s.id, s."startsAt", (SELECT count(*)::int FROM attendances a WHERE a."sessionId" = s.id)
+                + (SELECT count(*)::int FROM leads l WHERE l."trialSessionId" = s.id) AS marks
          FROM sessions s WHERE s."teamId" = $1 AND s.type = 'TRAINING' AND s."termId" = ANY($2::uuid[])`,
         [t.id, terms.map((x) => x.id)]);
       const have = new Set(existing.map((e) => new Date(e.startsAt).getTime()));

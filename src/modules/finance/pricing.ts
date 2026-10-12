@@ -55,7 +55,7 @@ export function hoursPerSession(code?: string | null): number {
 /**
  * Sessions a week a team trains, which picks the price-list tier. Development
  * squads train twice a week, Advanced and HPC three times, unless the team's own
- * schedule says otherwise. A development family can also buy a 1-day place.
+ * schedule says otherwise. A family can buy another tier the price list offers.
  */
 export function defaultSessionsPerWeek(team?: { trainingDays?: string[] | null; level?: string | null } | null): number {
   const days = team?.trainingDays?.length ?? 0;
@@ -63,14 +63,6 @@ export function defaultSessionsPerWeek(team?: { trainingDays?: string[] | null; 
   return team?.level && team.level !== 'DEVELOPMENT' ? 3 : 2;
 }
 
-/**
- * Which sessions-a-week tiers each level can buy, from the price-list headings:
- * 1 a week is Development only, 2 a week is Development & Advanced, 3 a week is
- * Advanced & HPC.
- */
-export const TIERS_FOR_LEVEL: Record<string, number[]> = {
-  DEVELOPMENT: [1, 2], ADVANCED: [2, 3], HPC: [3],
-};
-export function tierAllowed(level: string | null | undefined, spw: number): boolean {
-  return !level || !TIERS_FOR_LEVEL[level] || TIERS_FOR_LEVEL[level].includes(spw);
-}
+// Which sessions a week a child can buy is decided by the price list alone: any
+// level can have 1, 2 or 3 a week wherever the list has a price for the category
+// (U6, U8 and Girls have no 3-a-week row, so it isn't offered to them).
