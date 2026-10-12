@@ -43,8 +43,8 @@ export interface OverviewFilter { seasonId?: string; locationId?: string }
 export class DashboardOverviewService {
   constructor(@InjectDataSource() private readonly ds: DataSource) {}
 
-  async overview(f: OverviewFilter, opts: { finance: boolean; today?: Date }) {
-    const today = opts.today ?? new Date();
+  /** The season (given, or the active one), its terms and the location filter. */
+  private async context(f: OverviewFilter, today = new Date()) {
     const [season] = f.seasonId
       ? await this.ds.query(`SELECT ${SEASON_COLS} FROM seasons WHERE id = $1`, [f.seasonId])
       : await this.ds.query(`SELECT ${SEASON_COLS} FROM seasons WHERE "isActive" ORDER BY "startDate" DESC NULLS LAST LIMIT 1`);
@@ -53,8 +53,12 @@ export class DashboardOverviewService {
       `SELECT id, name, "startDate"::text AS "startDate", "endDate"::text AS "endDate", weeks
        FROM terms WHERE "seasonId" = $1 AND type = 'TERM' AND "isActive" ORDER BY "startDate"`, [season.id]);
     const [location] = f.locationId ? await this.ds.query(`SELECT id, name FROM locations WHERE id = $1`, [f.locationId]) : [null];
+    return { season, terms, loc: f.locationId ?? null, today, location: location ?? null };
+  }
 
-    const ctx = { season, terms, loc: f.locationId ?? null, today };
+  async overview(f: OverviewFilter, opts: { finance: boolean; today?: Date }) {
+    const ctx = await this.context(f, opts.today ?? new Date());
+    const { season, location, today } = ctx;
     const [players, coaches, attendance, schedule, wallet] = await Promise.all([
       this.players(ctx), this.coaches(ctx), this.attendance(ctx), this.schedule(ctx), this.walletBalance(ctx),
     ]);
@@ -267,25 +271,31 @@ export class DashboardOverviewService {
     });
   }
 
-  private async finance(c: Ctx) {
-    const params = [c.season.id, c.season.startDate, c.season.endDate, c.loc];
-    const scope = this.scopeSql();
-    const months = this.months(c.season);
-    const first = months[0].key, last = months[months.length - 1].key;
-
-    // Each line's share of its invoice, so collected/pending can be split by stream.
-    const lines: any[] = await this.ds.query(`${scope}
+  /** Every invoice line in scope, with the category of its child (for the revenue figures). */
+  private revenueLines(c: Ctx): Promise<any[]> {
+    return this.ds.query(`${this.scopeSql()}
       SELECT inv.id, inv.status, to_char(inv."issueDate", 'YYYY-MM') AS month, inv."issueDate"::text AS "issueDate",
              inv."termStart"::text AS "termStart",
              inv.total::float AS total, inv.collected::float AS collected, inv.balance::float AS balance,
              inv."writeOffAmount"::float AS "writeOff", inv.subtotal::float AS subtotal,
-             li.stream, li."lineTotal"::float AS net
-      FROM inv JOIN invoice_line_items li ON li."invoiceId" = inv.id`, params);
+             li.stream, li."lineTotal"::float AS net, ag.code AS category
+      FROM inv JOIN invoice_line_items li ON li."invoiceId" = inv.id
+      LEFT JOIN players pl ON pl.id = li."playerId" LEFT JOIN age_groups ag ON ag.id = pl."ageGroupId"`,
+      [c.season.id, c.season.startDate, c.season.endDate, c.loc]);
+  }
 
+  /**
+   * Split each line's share of its invoice into collected (direct money) and
+   * still pending, and add it to the month, term, stream and category buckets.
+   */
+  private splitRevenue(c: Ctx, lines: any[]) {
+    const months = this.months(c.season);
+    const first = months[0].key, last = months[months.length - 1].key;
     const streamKeys = STREAMS.map((s) => s.key);
     const blank = () => Object.fromEntries([...streamKeys, 'PENDING'].map((k) => [k, 0])) as Record<string, number>;
     const byMonth = new Map(months.map((m) => [m.key, blank()]));
     const byTerm = new Map(c.terms.map((t) => [t.name, blank()]));
+    const byCategory = new Map<string, Record<string, number>>();
     const byStream = blank();
     let collected = 0, pending = 0, billed = 0;
     const subtotals = new Map<string, number>();
@@ -302,10 +312,21 @@ export class DashboardOverviewService {
       bucket[stream] += paid; bucket.PENDING += open;
       const termName = this.termFor(c.terms, l.termStart ?? l.issueDate);
       if (termName) { const tb = byTerm.get(termName)!; tb[stream] += paid; tb.PENDING += open; }
+      const cat = l.category ?? 'No child';
+      if (!byCategory.has(cat)) byCategory.set(cat, blank());
+      const cb = byCategory.get(cat)!; cb[stream] += paid; cb.PENDING += open;
       byStream[stream] += paid + open;
       collected += paid; pending += open;
       if (!seenInv.has(l.id)) { seenInv.add(l.id); billed += l.total; }
     }
+    return { months, byMonth, byTerm, byCategory, byStream, collected, pending, billed, invoices: seenInv.size };
+  }
+
+  private async finance(c: Ctx) {
+    const params = [c.season.id, c.season.startDate, c.season.endDate, c.loc];
+    const scope = this.scopeSql();
+    const { months, byMonth, byTerm, byStream, collected, pending, billed } = this.splitRevenue(c, await this.revenueLines(c));
+
     const round = (o: Record<string, number>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, money(v)]));
     const revenue = money(collected + pending);
 
@@ -377,6 +398,120 @@ export class DashboardOverviewService {
         walletCredited: money(credited.amount),
         walletCreditedPct: pct(credited.amount),
       },
+    };
+  }
+
+  // ------------------------------------------------- reports behind the cards
+
+  /**
+   * Revenue in detail (the "Total revenue" card): the same figures as the card,
+   * by month, by term and by age category, each split into stream and pending.
+   */
+  async revenueReport(f: OverviewFilter) {
+    const c = await this.context(f);
+    const r = this.splitRevenue(c, await this.revenueLines(c));
+    const keys = STREAMS.map((s) => s.key);
+    const row = (o: Record<string, number>) => {
+      const streams = Object.fromEntries(keys.map((k) => [k, money(o[k])]));
+      const collected = money(keys.reduce((s, k) => s + o[k], 0));
+      return { streams, collected, pending: money(o.PENDING), total: money(collected + o.PENDING) };
+    };
+    const catOrder = (k: string) => Number(k.replace(/\D/g, '')) || (k === 'GIRLS' ? 98 : 99);
+    return {
+      season: { id: c.season.id, name: c.season.name, startDate: c.season.startDate, endDate: c.season.endDate },
+      location: c.location,
+      streams: STREAMS.filter((s) => s.key !== RevenueStream.OTHER || r.byStream[s.key] > 0),
+      // Every line lands in one month (early or late ones in the first or last), so the months add up to the total.
+      totals: { ...row(Object.fromEntries([...keys, 'PENDING'].map((k) => [k, [...r.byMonth.values()].reduce((s, b) => s + b[k], 0)]))),
+        billed: money(r.billed), invoices: r.invoices },
+      months: r.months.map((m) => {
+        const last = new Date(Date.UTC(m.year, Number(m.key.slice(5, 7)), 0));
+        return { key: m.key, label: `${m.label} ${m.year}`, from: `${m.key}-01`, to: iso(last), ...row(r.byMonth.get(m.key)!) };
+      }),
+      terms: c.terms.map((t) => ({ key: t.id, label: t.name, from: t.startDate, to: t.endDate, termId: t.id, ...row(r.byTerm.get(t.name)!) })),
+      categories: [...r.byCategory.entries()].sort((a, b) => catOrder(a[0]) - catOrder(b[0]))
+        .map(([k, v]) => ({ key: k, label: k, ...row(v) })),
+    };
+  }
+
+  /** The kits behind the "Kits sales" card: every kit line sold this season, piece by piece. */
+  async kitSales(f: OverviewFilter & { type?: string }) {
+    const c = await this.context(f);
+    const rows: any[] = await this.ds.query(`${this.scopeSql()}
+      SELECT inv.id AS "invoiceId", inv.number, inv.status, inv."issueDate"::text AS "issueDate",
+             g.reference AS "parentRef", g."fullName" AS parent,
+             pl.reference AS "playerRef", pl."firstName" || ' ' || pl."lastName" AS player, ag.code AS category,
+             li.description, li.quantity, li."lineTotal"::float AS net,
+             round(li."lineTotal" * (1 + li."vatRate" / 100), 2)::float AS gross,
+             COALESCE(li."kitItems", '[]'::jsonb) AS pieces
+      FROM inv JOIN invoice_line_items li ON li."invoiceId" = inv.id
+      LEFT JOIN guardians g ON g.id = inv."guardianId"
+      LEFT JOIN players pl ON pl.id = li."playerId" LEFT JOIN age_groups ag ON ag.id = pl."ageGroupId"
+      WHERE inv.status NOT IN ('REFUNDED') AND jsonb_array_length(COALESCE(li."kitItems", '[]'::jsonb)) > 0
+        AND ($5::text IS NULL OR EXISTS (SELECT 1 FROM jsonb_array_elements(li."kitItems") k WHERE k->>'type' = $5))
+      ORDER BY inv."issueDate" DESC, inv.number DESC`,
+      [c.season.id, c.season.startDate, c.season.endDate, c.loc, f.type ?? null]);
+    const units = new Map<string, number>();
+    for (const r of rows) for (const p of r.pieces) units.set(p.type, (units.get(p.type) ?? 0) + Number(p.qty || 0));
+    return {
+      season: { id: c.season.id, name: c.season.name }, location: c.location, type: f.type ?? null,
+      types: KIT_TYPES.map((k) => ({ ...k, units: units.get(k.key) ?? 0 })),
+      totals: { lines: rows.length, units: [...units.values()].reduce((s, n) => s + n, 0), gross: money(rows.reduce((s, r) => s + r.gross, 0)) },
+      rows,
+    };
+  }
+
+  /**
+   * The wallet ledger behind the "Wallet balance" card: every credit and debit on
+   * every family wallet, with each family's balance after the entry.
+   */
+  async walletLedger(q: { from?: string; to?: string; type?: string; search?: string; locationId?: string; page?: number; limit?: number }) {
+    const params: any[] = [];
+    const p = (v: any) => { params.push(v); return `$${params.length}`; };
+    const day = `(t."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Dubai')::date`;
+    const w: string[] = [];
+    if (q.from) w.push(`${day} >= ${p(q.from)}::date`);
+    if (q.to) w.push(`${day} <= ${p(q.to)}::date`);
+    if (q.type) w.push(`t.type = ${p(q.type)}`);
+    if (q.search) {
+      const s = p(`%${q.search.trim()}%`);
+      w.push(`(g."fullName" ILIKE ${s} OR g.reference ILIKE ${s} OR g.mobile ILIKE ${s} OR t.reason ILIKE ${s})`);
+    }
+    const locScope = (alias: string) => `EXISTS (SELECT 1 FROM players px JOIN teams tx ON tx.id = px."currentTeamId"
+      WHERE px."guardianId" = ${alias}."guardianId" AND tx."locationId" = ${p(q.locationId)})`;
+    if (q.locationId) w.push(locScope('wl'));
+    const where = w.length ? `WHERE ${w.join(' AND ')}` : '';
+    const base = `
+      WITH t AS (
+        SELECT t.*, sum(CASE WHEN t.type = 'CREDIT' THEN t.amount ELSE -t.amount END)
+                 OVER (PARTITION BY t."walletId" ORDER BY t."createdAt", t.id) AS "balanceAfter"
+        FROM wallet_transactions t)
+      SELECT %COLS% FROM t JOIN wallets wl ON wl.id = t."walletId" JOIN guardians g ON g.id = wl."guardianId" ${where}`;
+    const limit = Math.min(q.limit ?? 100, 100000), page = Math.max(1, q.page ?? 1);
+    const rows: any[] = await this.ds.query(base.replace('%COLS%', `
+        t.id, t."createdAt" AT TIME ZONE 'UTC' AS at, ${day}::text AS date, t.type, t.amount::float AS amount, t.reason,
+        t."balanceAfter"::float AS "balanceAfter", g.id AS "guardianId", g.reference AS "parentRef", g."fullName" AS parent,
+        g.mobile, wl.balance::float AS "walletBalance", substring(t.reason from 'LA-[0-9]+') AS "invoiceNumber"`)
+      + ` ORDER BY t."createdAt" DESC, t.id DESC LIMIT ${limit} OFFSET ${(page - 1) * limit}`, params);
+    const [tot] = await this.ds.query(base.replace('%COLS%', `count(*)::int AS count,
+        COALESCE(sum(t.amount) FILTER (WHERE t.type = 'CREDIT'), 0)::float AS credits,
+        COALESCE(sum(t.amount) FILTER (WHERE t.type = 'DEBIT'), 0)::float AS debits,
+        count(DISTINCT g.id)::int AS families`), params);
+    // Today's balances (not limited by the dates): what is held now, for the same families.
+    const bp: any[] = [];
+    const bw: string[] = [];
+    if (q.locationId) { bp.push(q.locationId); bw.push(`EXISTS (SELECT 1 FROM players px JOIN teams tx ON tx.id = px."currentTeamId"
+      WHERE px."guardianId" = wl."guardianId" AND tx."locationId" = $1)`); }
+    const [bal] = await this.ds.query(`SELECT COALESCE(sum(wl.balance), 0)::float AS balance,
+        count(*) FILTER (WHERE wl.balance > 0)::int AS "inCredit" FROM wallets wl ${bw.length ? 'WHERE ' + bw.join(' AND ') : ''}`, bp);
+    const ids = [...new Set(rows.filter((r) => r.invoiceNumber).map((r) => r.invoiceNumber))];
+    const inv: any[] = ids.length ? await this.ds.query(`SELECT id, number FROM invoices WHERE number = ANY($1)`, [ids]) : [];
+    const invId = new Map(inv.map((i) => [i.number, i.id]));
+    return {
+      data: rows.map((r) => ({ ...r, invoiceId: r.invoiceNumber ? invId.get(r.invoiceNumber) ?? null : null })),
+      page, limit,
+      totals: { count: tot.count, credits: money(tot.credits), debits: money(tot.debits), net: money(tot.credits - tot.debits), families: tot.families },
+      now: { balance: money(bal.balance), familiesInCredit: bal.inCredit },
     };
   }
 

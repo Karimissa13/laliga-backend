@@ -208,6 +208,57 @@ describe('Price list, term options and extras (e2e)', () => {
     expect(z.finance.revenue.total).toBeLessThan(f.revenue.total);
   });
 
+  it('each dashboard card opens a report with the same figures (Karim, Oct 2026)', async () => {
+    const d = (await request(http).get('/api/v1/dashboard/overview').set(auth()).expect(200)).body;
+    const f = d.finance, season = d.filters.season.id;
+
+    // Total revenue → revenue report: same total, collected and pending; months, terms and categories each add up.
+    const r = (await request(http).get(`/api/v1/dashboard/revenue?seasonId=${season}`).set(auth()).expect(200)).body;
+    expect(r.totals.total).toBeCloseTo(f.revenue.total, 1);
+    expect(r.totals.collected).toBeCloseTo(f.revenue.collected, 1);
+    expect(r.totals.pending).toBeCloseTo(f.revenue.pending, 1);
+    for (const rows of [r.months, r.terms, r.categories]) {
+      expect(rows.reduce((s: number, x: any) => s + x.total, 0)).toBeCloseTo(r.totals.total, 0);
+    }
+    expect(r.months[0]).toMatchObject({ key: '2026-09', from: '2026-09-01', to: '2026-09-30' });
+    expect(r.categories.some((c: any) => c.key === 'U12')).toBe(true);
+
+    // Kits sales → kit sales: the same pieces, one row per kit line; a type filter keeps only that type.
+    const k = (await request(http).get(`/api/v1/dashboard/kit-sales?seasonId=${season}`).set(auth()).expect(200)).body;
+    expect(k.totals.units).toBe(f.kits.units);
+    expect(k.rows.length).toBeGreaterThan(0);
+    expect(k.rows[0]).toHaveProperty('number');
+    const home = (await request(http).get(`/api/v1/dashboard/kit-sales?seasonId=${season}&type=HOME`).set(auth()).expect(200)).body;
+    expect(home.rows.every((x: any) => x.pieces.some((p: any) => p.type === 'HOME'))).toBe(true);
+    await request(http).get('/api/v1/dashboard/kit-sales?type=SOCKS').set(auth()).expect(400);
+
+    // Payment status → the invoice list for the season: the same counts as the card.
+    const count = async (qs: string) => (await request(http).get(`/api/v1/invoice-register?seasonId=${season}&amountFrom=0.01&${qs}`).set(auth()).expect(200)).body.totals.count;
+    expect(await count('status=PAID')).toBe(f.payments.fullyPaid.count);
+    expect(await count('status=PART_PAID')).toBe(f.payments.partiallyPaid.count);
+    expect(await count('status=ISSUED')).toBe(f.payments.unpaid.count);
+    expect(await count('open=true')).toBe(f.payments.unpaidInvoices);
+
+    // Wallet balance → wallet ledger: today's balance matches the card; each family's balance after its last entry is its wallet.
+    const w = (await request(http).get('/api/v1/dashboard/wallet-ledger').set(auth()).expect(200)).body;
+    expect(w.now.balance).toBeCloseTo(d.wallet.balance, 1);
+    expect(w.totals.count).toBeGreaterThan(0);
+    const latest = new Map<string, any>();
+    for (const e of w.data) if (!latest.has(e.guardianId)) latest.set(e.guardianId, e);
+    for (const e of latest.values()) expect(e.balanceAfter).toBeCloseTo(e.walletBalance, 1);
+    const credits = (await request(http).get('/api/v1/dashboard/wallet-ledger?type=CREDIT').set(auth()).expect(200)).body;
+    expect(credits.data.every((e: any) => e.type === 'CREDIT')).toBe(true);
+    const csv = await request(http).get('/api/v1/dashboard/wallet-ledger.csv').set(auth()).expect(200);
+    expect(csv.text).toMatch(/Date,Parent No,Parent,Mobile,Type,Amount,Balance After/);
+
+    // Coaches have none of these.
+    const coachTok = (await request(http).post('/api/v1/auth/login')
+      .send({ email: 'sergio@laligaacademy.local', password: 'Coach@12345' }).expect(201)).body.accessToken;
+    for (const path of ['revenue', 'kit-sales', 'wallet-ledger']) {
+      await request(http).get(`/api/v1/dashboard/${path}`).set({ Authorization: `Bearer ${coachTok}` }).expect(403);
+    }
+  });
+
   it('a coach sees the admin side of the dashboard but no money', async () => {
     const coachTok = (await request(http).post('/api/v1/auth/login')
       .send({ email: 'sergio@laligaacademy.local', password: 'Coach@12345' }).expect(201)).body.accessToken;

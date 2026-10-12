@@ -57,7 +57,7 @@ export interface InvoiceRegisterFilter {
   invoiceFrom?: string; invoiceTo?: string; paymentFrom?: string; paymentTo?: string;
   amountFrom?: number; amountTo?: number;
   /** Quick filters: still owed (issued / part paid with a balance), due-date window, has an instalment plan. */
-  open?: boolean; dueFrom?: string; dueTo?: string; hasPlan?: boolean;
+  open?: boolean; dueFrom?: string; dueTo?: string; hasPlan?: boolean; seasonId?: string; billed?: boolean;
   /** Only these invoices (bulk export of a selection). */
   ids?: string[];
   sort?: InvoiceSortKey; dir?: 'asc' | 'desc';
@@ -206,6 +206,13 @@ export class FinanceReportsService {
     if (f.ageGroupId) w.push(`EXISTS (SELECT 1 FROM invoice_line_items li JOIN players pl ON pl.id = li."playerId" WHERE li."invoiceId" = i.id AND pl."ageGroupId" = ${p(f.ageGroupId)})`);
     if (f.termId) w.push(`EXISTS (SELECT 1 FROM enrolments e WHERE e."invoiceId" = i.id AND e."termId" = ${p(f.termId)})`);
     if (f.locationId) w.push(`${LOCATION_SQL('i')} = ${p(f.locationId)}`);
+    // The season, as the dashboard scopes it: through the enrolments, or (items-only invoices) by date.
+    if (f.seasonId) {
+      const s = p(f.seasonId);
+      w.push(`(EXISTS (SELECT 1 FROM enrolments e WHERE e."invoiceId" = i.id AND e."seasonId" = ${s})
+        OR (NOT EXISTS (SELECT 1 FROM enrolments e WHERE e."invoiceId" = i.id)
+            AND EXISTS (SELECT 1 FROM seasons sx WHERE sx.id = ${s} AND i."issueDate" BETWEEN sx."startDate" - 90 AND sx."endDate" + 90)))`);
+    }
     if (f.invoiceFrom) w.push(`i."issueDate" >= ${p(f.invoiceFrom)}::date`);
     if (f.invoiceTo) w.push(`i."issueDate" <= ${p(f.invoiceTo)}::date`);
     if (f.paymentFrom || f.paymentTo) {
@@ -219,6 +226,7 @@ export class FinanceReportsService {
     if (f.open) w.push(`(i.status IN ('ISSUED', 'PART_PAID') AND ${BALANCE_SQL('i')} > 0.05)`);
     if (f.dueFrom) w.push(`i."dueDate" >= ${p(f.dueFrom)}::date`);
     if (f.dueTo) w.push(`i."dueDate" <= ${p(f.dueTo)}::date`);
+    if (f.billed) w.push(`i.status NOT IN ('DRAFT', 'CANCELLED')`);
     if (f.hasPlan) w.push(`EXISTS (SELECT 1 FROM invoice_instalments ii WHERE ii."invoiceId" = i.id)`);
     if (f.ids?.length) w.push(`i.id = ANY(${p(f.ids)}::uuid[])`);
     return { where: w.length ? `WHERE ${w.join(' AND ')}` : '', params, p };

@@ -42,6 +42,9 @@ export class InvoiceRegisterQueryDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID() ageGroupId?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() locationId?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() termId?: string;
+  @ApiPropertyOptional({ description: "The season's invoices, as the dashboard counts them" }) @IsOptional() @IsUUID() seasonId?: string;
+  @ApiPropertyOptional({ description: 'Only invoices that count as revenue (not drafts or cancelled)' })
+  @IsOptional() @Transform(boolParam) @IsBoolean() billed?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsDateString() invoiceFrom?: string;
   @ApiPropertyOptional() @IsOptional() @IsDateString() invoiceTo?: string;
   @ApiPropertyOptional() @IsOptional() @IsDateString() paymentFrom?: string;

@@ -80,6 +80,8 @@ const PAGES = [
   {g:'Finance'},
   {k:'invoices', t:'Invoices', perm:'invoice.view', icon:'▦'},
   {k:'paymentReport', t:'Payment Report', perm:'payment.view', icon:'≣'},
+  {k:'revenueReport', t:'Revenue report', perm:'invoice.view', icon:'▮'},
+  {k:'walletReport', t:'Wallet ledger', perm:'wallet.view', icon:'◫'},
   {k:'prices', t:'Price list & products', perm:'invoice.view', icon:'¤'},
   {k:'discounts', t:'Discount rules', perm:'discount.view', icon:'%'},
   {g:'Engagement'},
@@ -215,7 +217,7 @@ function renderDashboard(q) {
           <label class="dsel"><span>Location</span><select id="df-loc">${opt('', 'All locations', !DASHF.locationId)}${LK.locations.map((l) => opt(l.id, shortLoc(l.name), DASHF.locationId === l.id)).join('')}</select></label>
           <label class="dsel"><span>Season</span><select id="df-season">${LK.seasons.map((s) => opt(s.id, seasonName(s), DASHF.seasonId === s.id)).join('')}</select></label>
         </div>
-        <div class="card wallet" title="Credit held in family wallets${d.filters.location ? ' at this location' : ''} — overpayments, refunds to wallet and sibling credits not yet used.">
+        <div class="card wallet${can('wallet.view') ? ' dlink" data-act="dWallet" role="button" tabindex="0' : ''}" title="Credit held in family wallets${d.filters.location ? ' at this location' : ''} — overpayments, refunds to wallet and sibling credits not yet used.${can('wallet.view') ? ' Click for the wallet ledger.' : ''}">
           <div class="wn">${money(d.wallet.balance)}</div><div class="wl">${walletIcon()} Wallet balance</div>
           <div class="mini">${d.wallet.familiesWithCredit} famil${d.wallet.familiesWithCredit === 1 ? 'y' : 'ies'} in credit</div></div>
       </div>
@@ -257,7 +259,7 @@ function playersCard(p) {
   const line = xy.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
   const up = p.change >= 0;
   const delta = p.changePct != null ? `${up ? '+' : ''}${p.changePct}%` : (p.change ? `${up ? '+' : ''}${p.change}` : '0');
-  return `<div class="card dcard">${cardHead('Registered players', '<span class="dic">●</span>')}
+  return `<div class="card dcard dlink" data-act="dPlayers" role="button" tabindex="0" title="Open the players directory">${cardHead('Registered players', '<span class="dic">→</span>')}
     <div class="bign">${p.registered.toLocaleString('en-AE')}</div>
     <div class="trend ${p.change > 0 ? 'up' : p.change < 0 ? 'down' : ''}">${p.change > 0 ? '▲' : p.change < 0 ? '▼' : '■'} ${delta} <span>vs last week (${p.lastWeek})</span></div>
     ${p.waitlisted ? `<div class="mini">${p.waitlisted} waitlisted</div>` : ''}
@@ -283,7 +285,7 @@ function coachesCard(c) {
 function attendanceCard(t) {
   const R = 42, C = 2 * Math.PI * R, p = t.overallPct ?? 0;
   const cls = t.overallPct == null ? '' : p >= 85 ? 'good' : p >= 70 ? 'warn' : 'bad';
-  return `<div class="card dcard">${cardHead('Players attendance', '<span class="mini">overall %</span>')}
+  return `<div class="card dcard dlink" data-act="go" data-a1="attendance" role="button" tabindex="0" title="Open attendance">${cardHead('Players attendance', '<span class="mini">overall % →</span>')}
     <div class="att"><svg viewBox="0 0 100 100" class="donut ${cls}" role="img" aria-label="Attendance ${pctTxt(t.overallPct)}">
       <circle cx="50" cy="50" r="${R}" class="trk"/>
       <circle cx="50" cy="50" r="${R}" class="val" stroke-dasharray="${(C * p / 100).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 50 50)"/>
@@ -301,8 +303,8 @@ function scheduleCard(s) {
   const w1 = Math.min(s.lastWeek, w0 + SPAN - 1), n = w1 - w0 + 1;
   const col = (x) => ({ a: Math.max(x.startWeek, w0) - w0 + 2, b: Math.min(x.endWeek, w1) - w0 + 3 });
   const vis = (x) => x.endWeek >= w0 && x.startWeek <= w1;
-  const bar = (x, cls, label, row) => { const c = col(x);
-    return `<div class="tbar ${cls}" style="grid-column:${c.a}/${c.b};grid-row:${row}" title="${esc(label)} · ${dt(x.startDate)}${x.endDate !== x.startDate ? ' – ' + dt(x.endDate) : ''}${x.location ? ' · ' + esc(shortLoc(x.location)) : ''}${x.notes ? ' · ' + esc(x.notes) : ''}"><span>${esc(label)}</span></div>`; };
+  const bar = (x, cls, label, row, key) => { const c = col(x);
+    return `<div class="tbar ${cls}" data-act="dEvent" data-a1="${key}" role="button" tabindex="0" style="grid-column:${c.a}/${c.b};grid-row:${row}" title="${esc(label)} · ${dt(x.startDate)}${x.endDate !== x.startDate ? ' – ' + dt(x.endDate) : ''}${x.location ? ' · ' + esc(shortLoc(x.location)) : ''}${x.notes ? ' · ' + esc(x.notes) : ''}"><span>${esc(label)}</span></div>`; };
   const weeks = s.weeks.slice(w0 - 1, w1);
   const events = s.events.filter(vis), bookings = s.bookings.filter(vis), hols = s.holidays.filter(vis);
   const tools = `<span class="tnav"><button class="lnk" data-act="dWeeks" data-a1="-${SPAN}" ${w0 <= 1 ? 'disabled' : ''} aria-label="Earlier weeks">‹</button><button class="lnk" data-act="dWeeks" data-a1="0">Now</button><button class="lnk" data-act="dWeeks" data-a1="${SPAN}" ${w1 >= s.lastWeek ? 'disabled' : ''} aria-label="Later weeks">›</button>${can('session.create') ? `<button class="lnk" data-act="dCalendar">+ Add</button>` : ''}</span>`;
@@ -310,18 +312,18 @@ function scheduleCard(s) {
     <div class="srem"><b>${s.remainingTrainingWeeks}</b> training weeks left this season${s.currentTerm ? ` · ${esc(s.currentTerm.name)} ends ${dt(s.currentTerm.endDate)}` : ''}</div>
     <div class="tgrid" style="grid-template-columns:86px repeat(${n},minmax(22px,1fr))">
       <div class="tl0" style="grid-row:1"></div>
-      ${s.terms.filter(vis).map((t) => bar(t, 'term', t.name, 1)).join('')}
+      ${s.terms.filter(vis).map((t) => bar(t, 'term', t.name, 1, 'terms:' + s.terms.indexOf(t))).join('')}
       <div class="tl0" style="grid-row:2">Week</div>
       ${weeks.map((w, i) => `<div class="twk ${w.n === s.currentWeek ? 'now' : ''} ${w.holiday ? 'off' : ''} ${!w.term ? 'gap' : ''}" style="grid-column:${i + 2};grid-row:2" title="Week ${w.n}: ${dt(w.start)} – ${dt(w.end)}${w.holiday ? ' · ' + esc(w.holiday) : ''}">${w.n}</div>`).join('')}
       <div class="tl0" style="grid-row:3">Pitch bookings</div>
       ${weeks.map((w, i) => `<div class="tcell ${w.n === s.currentWeek ? 'now' : ''}" style="grid-column:${i + 2};grid-row:3"></div>`).join('')}
-      ${bookings.map((b) => bar(b, 'book', b.location ? shortLoc(b.location) : b.title, 3)).join('')}
+      ${bookings.map((b) => bar(b, 'book', b.location ? shortLoc(b.location) : b.title, 3, 'bookings:' + s.bookings.indexOf(b))).join('')}
       <div class="tl0" style="grid-row:4">Matches / events</div>
       ${weeks.map((w, i) => `<div class="tcell ${w.n === s.currentWeek ? 'now' : ''}" style="grid-column:${i + 2};grid-row:4"></div>`).join('')}
-      ${events.map((e) => bar(e, 'evt', e.title + (e.team ? ' · ' + e.team : ''), 4)).join('')}
+      ${events.map((e) => bar(e, 'evt', e.title + (e.team ? ' · ' + e.team : ''), 4, 'events:' + s.events.indexOf(e))).join('')}
       <div class="tl0" style="grid-row:5">Breaks</div>
       ${weeks.map((w, i) => `<div class="tcell ${w.n === s.currentWeek ? 'now' : ''}" style="grid-column:${i + 2};grid-row:5"></div>`).join('')}
-      ${hols.map((h) => bar(h, 'hol', h.title, 5)).join('')}
+      ${hols.map((h) => bar(h, 'hol', h.title, 5, 'holidays:' + s.holidays.indexOf(h))).join('')}
     </div>
     ${!events.length ? `<div class="mini" style="margin-top:6px">No matches or tournaments in these weeks${can('session.create') ? ' — add them with + Add' : ''}.</div>` : ''}`;
 }
@@ -331,12 +333,81 @@ ACT.dWeeks = (delta) => {
   $('d-sched').innerHTML = scheduleCard(s);
 };
 
+// ---------- from the dashboard to the report behind each card ----------
+// Each card opens its report with the dashboard's season and location already applied.
+ACT.dPlayers = () => { PF = { page: 1, seasonId: DASHF.seasonId || '', locationId: DASHF.locationId || '' }; go('players'); };
+ACT.dWallet = (type) => {
+  const s = DASH?.filters?.season;
+  WRF = { from: type && s?.startDate ? s.startDate : '', to: '', type: type || '', search: '', locationId: DASHF.locationId || '', page: 1 };
+  go('walletReport');
+};
+ACT.dRevenue = () => { RVF = { seasonId: DASHF.seasonId || '', locationId: DASHF.locationId || '', group: DASHF.revMode === 'term' ? 'term' : 'month' }; go('revenueReport'); };
+ACT.dKits = (type) => { INVF.tab = 'kits'; INVF.kitType = type || ''; go('inventory'); };
+const PAY_STATUS_WORD = { PAID: 'Fully paid', PART_PAID: 'Partially paid', ISSUED: 'Unpaid' };
+/** Payment status card → the invoice list, filtered to what was clicked (status, or what is owed / overdue). */
+ACT.dPay = (k) => {
+  const t = dubaiToday(), ago = (n) => addDaysIso(t, -n);
+  const owed = {
+    OPEN: ['Still owed', { open: 'true' }],
+    D0_30: ['Overdue 0–30 days', { open: 'true', dueFrom: ago(30), dueTo: ago(1) }],
+    D31_60: ['Overdue 31–60 days', { open: 'true', dueFrom: ago(60), dueTo: ago(31) }],
+    D60_PLUS: ['Overdue over 60 days', { open: 'true', dueTo: ago(61) }],
+    NOT_DUE: ['Not yet due', { open: 'true', dueFrom: t }],
+  };
+  const season = (LK.seasons || []).find((s) => s.id === DASHF.seasonId);
+  IF = { page: 1, wide: IF.wide, sort: '', dir: '', quick: '', seasonId: DASHF.seasonId || '', locationId: DASHF.locationId || '' };
+  if (PAY_STATUS_WORD[k]) IF.status = k;
+  IF.extra = owed[k] ? owed[k][1] : { billed: 'true' };
+  IF.fromDash = (PAY_STATUS_WORD[k] || owed[k]?.[0] || 'All invoices') + (season ? ' · ' + season.name : '');
+  invNewSearch(); go('invoices');
+};
+/** A block on the schedule grid: its details, and where to act on it. */
+ACT.dEvent = (key) => {
+  const [list, i] = String(key).split(':'), s = DASH?.admin?.schedule, x = s?.[list]?.[Number(i)];
+  if (!x) return;
+  const when = dt(x.startDate) + (x.endDate !== x.startDate ? ' – ' + dt(x.endDate) : '');
+  const kindWord = list === 'terms' ? 'Term' : list === 'holidays' ? 'Break / holiday' : (EV_KIND[x.kind] || (x.kind ? x.kind.charAt(0) + x.kind.slice(1).toLowerCase() : 'Event'));
+  const rows = [['What', esc(kindWord)], ['When', esc(when)], ['Weeks', x.startWeek === x.endWeek ? 'Week ' + x.startWeek : `Weeks ${x.startWeek}–${x.endWeek}`]];
+  if (x.location) rows.push(['Location', esc(shortLoc(x.location))]);
+  if (x.team) rows.push(['Team', esc(x.team)]);
+  if (x.notes) rows.push(['Notes', esc(x.notes)]);
+  let extra = '';
+  if (list === 'bookings') {
+    // The weekly slots this booking covers: every active team training at the venue.
+    const teams = (LK.teams || []).filter((t) => t.isActive !== false && (!x.location || t.location === x.location) && t.schedule);
+    const bySlot = new Map();
+    for (const t of teams) bySlot.set(t.schedule, [...(bySlot.get(t.schedule) || []), t.name]);
+    extra = `<h4 style="margin:18px 0 8px">Weekly training slots (${teams.length} teams)</h4>${[...bySlot.entries()].map(([slot, names]) =>
+      `<div class="lookup-hit"><div><b>${esc(slot)}</b><div class="mini">${esc(names.join(', '))}</div></div><span class="chip">${names.length}</span></div>`).join('') || '<div class="mini">No teams train here yet.</div>'}`;
+  }
+  if (list === 'terms') {
+    const left = s.weeks.filter((w) => w.term === x.name && !w.holiday && w.end >= s.today).length;
+    rows.push(['Training weeks left', String(left)]);
+  }
+  if (list === 'holidays') rows.push(['Training', 'No training on these days']);
+  const acts = [];
+  if (x.source === 'session' && x.id) acts.push(`<button class="btn ghost" data-act="showRegister" data-a1="${x.id}" data-a2="${esc(x.team || x.title)}">Open the register</button>`);
+  if (x.id && x.source !== 'session' && list !== 'terms') {
+    if (can('session.delete')) acts.push(`<button class="btn ghost" data-act="dCalendarDelOne" data-a1="${x.id}">Remove from the calendar</button>`);
+    if (can('session.create')) acts.push('<button class="btn ghost" data-act="dCalendar">Academy calendar</button>');
+  }
+  if (list === 'bookings' && can('session.view')) acts.push('<button class="btn ghost" data-act="go" data-a1="sessions">Schedule</button>');
+  openDrawer(x.title || x.name || kindWord, `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>${extra}
+    <div class="row-end">${acts.join('')}<button class="btn" data-act="closeDrawer">Close</button></div>`);
+};
+ACT.dCalendarDelOne = async (id) => {
+  if (!confirm('Remove this entry from the academy calendar?')) return;
+  try { await api('/academy-events/' + id, { method: 'DELETE' }); toast('Removed'); closeDrawer(); go('dashboard'); }
+  catch (e) { toast(e.message); }
+};
+
 // ---------- revenue ----------
 function revenueCard(f) {
   const r = f.revenue, byTerm = DASHF.revMode === 'term';
   const cols = byTerm ? r.terms : r.months;
   const keys = f.streams.map((s) => s.key);
-  const tot = (c) => keys.reduce((s, k) => s + (c[k] || 0), 0) + (c.PENDING || 0);
+  // Bars show money collected, by stream; what is still pending is in the line above the chart.
+  const tot = (c) => keys.reduce((s, k) => s + (c[k] || 0), 0);
   const max = niceMax(Math.max(0, ...cols.map(tot)));
   const W = 560, H = 250, L = 46, B = 26, T = 8, cw = (W - L - 6) / Math.max(1, cols.length), bw = Math.min(34, cw * 0.62);
   const y = (v) => T + (H - T - B) * (1 - v / max);
@@ -344,25 +415,24 @@ function revenueCard(f) {
   let bars = '';
   cols.forEach((c, i) => {
     let acc = 0; const x = L + i * cw + (cw - bw) / 2;
-    for (const k of [...keys, 'PENDING']) {
+    for (const k of keys) {
       const v = c[k] || 0; if (v <= 0) continue;
       const y0 = y(acc), y1 = y(acc + v); acc += v;
-      const label = k === 'PENDING' ? 'Pending (unpaid)' : f.streams.find((s) => s.key === k).label;
-      bars += `<rect x="${x.toFixed(1)}" y="${y1.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0.5, y0 - y1).toFixed(1)}" fill="${sc(k)}" class="${k === 'PENDING' ? 'pend' : ''}"><title>${esc(c.label)}${c.year ? ' ' + c.year : ''} · ${esc(label)}: ${money(v)}</title></rect>`;
+      const label = f.streams.find((s) => s.key === k).label;
+      bars += `<rect x="${x.toFixed(1)}" y="${y1.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0.5, y0 - y1).toFixed(1)}" fill="${sc(k)}"><title>${esc(c.label)}${c.year ? ' ' + c.year : ''} · ${esc(label)}: ${money(v)}</title></rect>`;
     }
     const lbl = byTerm ? c.label : `${c.label} ${String(c.year).slice(2)}`;
     bars += `<text x="${(L + i * cw + cw / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" class="ax">${esc(lbl)}</text>`;
   });
-  const legend = [...f.streams.map((s) => ({ k: s.key, l: s.label, v: s.amount })), { k: 'PENDING', l: 'Pending amount', v: r.pending }];
-  return `${cardHead('Total revenue', `<select id="df-rev" class="dmini" aria-label="Group by">${opt('month', 'Monthly', !byTerm)}${opt('term', 'By term', byTerm)}</select>`)}
-    <div class="revtop"><div><div class="bign">${aed0(r.total)}</div>
-      <div class="mini">Collected <b>${aed0(r.collected)}</b> · pending <b>${aed0(r.pending)}</b> · ${byTerm ? 'by term' : 'by invoice month'}</div></div>
-      <div class="legend">${legend.map((g) => `<span title="${money(g.v)}"><i style="background:${sc(g.k)}" class="${g.k === 'PENDING' ? 'pend' : ''}"></i>${esc(g.l)}</span>`).join('')}</div></div>
-    <svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Revenue ${byTerm ? 'by term' : 'by month'}, stacked by stream">
-      <defs><pattern id="hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="var(--s-pending)"/><line x1="0" y1="0" x2="0" y2="5" stroke="var(--surface)" stroke-width="1.6"/></pattern></defs>
+  const legend = f.streams.map((s) => ({ k: s.key, l: s.label, v: s.amount }));
+  return `${cardHead('Total revenue', `<span class="tnav"><select id="df-rev" class="dmini" aria-label="Group by">${opt('month', 'Monthly', !byTerm)}${opt('term', 'By term', byTerm)}</select><button class="lnk" data-act="dRevenue">Details →</button></span>`)}
+    <div class="dlink" data-act="dRevenue" role="button" tabindex="0" title="Open the revenue breakdown"><div class="revtop"><div><div class="bign">${aed0(r.total)}</div>
+      <div class="mini">Collected <b>${aed0(r.collected)}</b> · pending <b>${aed0(r.pending)}</b> · bars show collected ${byTerm ? 'by term' : 'by invoice month'}</div></div>
+      <div class="legend">${legend.map((g) => `<span title="${money(g.v)}"><i style="background:${sc(g.k)}"></i>${esc(g.l)}</span>`).join('')}</div></div>
+    <svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Revenue collected ${byTerm ? 'by term' : 'by month'}, stacked by stream">
       ${ticks.map((t) => `<line x1="${L}" x2="${W - 4}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" class="grid"/><text x="${L - 6}" y="${(y(t) + 3.5).toFixed(1)}" text-anchor="end" class="ax">${aedShort(t)}</text>`).join('')}
       ${bars}
-    </svg>
+    </svg></div>
     ${r.total ? '' : '<div class="mini">No invoices issued this season yet.</div>'}`;
 }
 
@@ -372,12 +442,12 @@ function kitsCard(k) {
   const max = niceMax(Math.max(1, ...k.types.map((t) => t.units)));
   const y = (v) => T + (H - T - B) * (1 - v / max);
   const ticks = [0, 0.5, 1].map((t) => Math.round(t * max));
-  return `<div class="card dcard">${cardHead('Kits sales', `<span class="mini">${aed0(k.revenue)}</span>`)}
+  return `<div class="card dcard dlink" data-act="dKits" role="button" tabindex="0" title="Open the kit sales (click a bar for one kit type)">${cardHead('Kits sales', `<span class="mini">${aed0(k.revenue)} →</span>`)}
     <div class="mini" title="A Development kit counts as one training kit; an Advanced kit as a training kit and a home (match) kit.">${k.units} piece${k.units === 1 ? '' : 's'} sold this season</div>
     <svg viewBox="0 0 ${W} ${H}" class="chart kits" role="img" aria-label="Kit pieces sold by type">
       ${ticks.map((t) => `<line x1="${L}" x2="${W - 2}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" class="grid"/><text x="${L - 5}" y="${(y(t) + 3.5).toFixed(1)}" text-anchor="end" class="ax">${t}</text>`).join('')}
       ${k.types.map((t, i) => { const x = L + i * cw + (cw - bw) / 2, yy = y(t.units);
-        return `<rect x="${x.toFixed(1)}" y="${yy.toFixed(1)}" width="${bw.toFixed(1)}" height="${(H - B - yy).toFixed(1)}" rx="3" class="kb"><title>${esc(t.label)}: ${t.units}</title></rect>
+        return `<rect x="${x.toFixed(1)}" y="${yy.toFixed(1)}" width="${bw.toFixed(1)}" height="${(H - B - yy).toFixed(1)}" rx="3" class="kb" data-act="dKits" data-a1="${t.key}"><title>${esc(t.label)}: ${t.units} — click for these sales</title></rect>
           <text x="${(x + bw / 2).toFixed(1)}" y="${(yy - 4).toFixed(1)}" text-anchor="middle" class="vl">${t.units}</text>
           <text x="${(L + i * cw + cw / 2).toFixed(1)}" y="${H - 18}" text-anchor="middle" class="ax">${esc(t.label.replace(' kit', ''))}</text>
           <text x="${(L + i * cw + cw / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle" class="ax">${/kit/.test(t.label) ? 'kit' : ''}</text>`; }).join('')}
@@ -387,30 +457,30 @@ function kitsCard(k) {
 // ---------- payments ----------
 function paymentsCard(p) {
   const segs = [
-    { l: 'Fully paid', n: p.fullyPaid.count, v: p.fullyPaid.amount, c: 'var(--good)' },
-    { l: 'Partially paid', n: p.partiallyPaid.count, v: p.partiallyPaid.amount, c: 'var(--warn)' },
-    { l: 'Unpaid', n: p.unpaid.count, v: p.unpaid.amount, c: 'var(--bad)' },
+    { k: 'PAID', l: 'Fully paid', n: p.fullyPaid.count, v: p.fullyPaid.amount, c: 'var(--good)' },
+    { k: 'PART_PAID', l: 'Partially paid', n: p.partiallyPaid.count, v: p.partiallyPaid.amount, c: 'var(--warn)' },
+    { k: 'ISSUED', l: 'Unpaid', n: p.unpaid.count, v: p.unpaid.amount, c: 'var(--bad)' },
   ];
   const total = segs.reduce((s, x) => s + x.n, 0), R = 40, C = 2 * Math.PI * R;
   let off = 0;
   const arcs = total ? segs.filter((s) => s.n).map((s) => { const len = C * s.n / total;
-    const el = `<circle cx="50" cy="50" r="${R}" fill="none" stroke="${s.c}" stroke-width="16" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 50 50)"><title>${s.l}: ${s.n} invoice${s.n === 1 ? '' : 's'} · ${money(s.v)}</title></circle>`;
+    const el = `<circle cx="50" cy="50" r="${R}" fill="none" stroke="${s.c}" stroke-width="16" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 50 50)" class="dseg" data-act="dPay" data-a1="${s.k}"><title>${s.l}: ${s.n} invoice${s.n === 1 ? '' : 's'} · ${money(s.v)}</title></circle>`;
     off += len; return el; }).join('') : `<circle cx="50" cy="50" r="${R}" fill="none" stroke="var(--surface-3)" stroke-width="16"/>`;
   const ag = p.aging;
-  return `<div class="card dcard dpay">${cardHead('Payment status & unpaid summary', `<button class="lnk" data-act="go" data-a1="invoices">Invoices →</button>`)}
+  return `<div class="card dcard dpay">${cardHead('Payment status & unpaid summary', `<button class="lnk" data-act="dPay" data-a1="">Invoices →</button>`)}
     <div class="pdon"><svg viewBox="0 0 100 100" class="pd" role="img" aria-label="Invoices by payment status">${arcs}<text x="50" y="50" text-anchor="middle" class="pn">${total}</text><text x="50" y="63" text-anchor="middle" class="pl">invoices</text></svg>
-      <div class="plg">${segs.map((s) => `<div class="pr"><i style="background:${s.c}"></i><span>${s.l}</span><b>${s.n}</b><em>${aed0(s.v)}</em></div>`).join('')}</div></div>
+      <div class="plg">${segs.map((s) => `<div class="pr dlink" data-act="dPay" data-a1="${s.k}" role="button" tabindex="0" title="Open these invoices"><i style="background:${s.c}"></i><span>${s.l}</span><b>${s.n}</b><em>${aed0(s.v)}</em></div>`).join('')}</div></div>
     <div class="ptiles">
-      <div class="ptile"><div class="k">Unpaid players</div><div class="v">${p.unpaidPlayers}</div><div class="mini">${p.unpaidInvoices} unpaid invoice${p.unpaidInvoices === 1 ? '' : 's'}</div></div>
-      <div class="ptile good" title="Credit put into family wallets this season: overpayments, refunds to wallet, sibling credits"><div class="k">Wallet credit given</div><div class="v">${aed0(p.walletCredited)}</div><div class="mini">${p.walletCreditedPct == null ? '—' : p.walletCreditedPct + '% of total revenue'}</div></div>
+      <div class="ptile dlink" data-act="dPay" data-a1="OPEN" role="button" tabindex="0" title="Open every invoice still owed"><div class="k">Unpaid players</div><div class="v">${p.unpaidPlayers}</div><div class="mini">${p.unpaidInvoices} unpaid invoice${p.unpaidInvoices === 1 ? '' : 's'}</div></div>
+      <div class="ptile good${can('wallet.view') ? ' dlink" data-act="dWallet" data-a1="CREDIT" role="button" tabindex="0' : ''}" title="Credit put into family wallets this season: overpayments, refunds to wallet, sibling credits"><div class="k">Wallet credit given</div><div class="v">${aed0(p.walletCredited)}</div><div class="mini">${p.walletCreditedPct == null ? '—' : p.walletCreditedPct + '% of total revenue'}</div></div>
     </div>
     <div class="pbot">
-      <div class="unp"><div class="k">Total unpaid</div><div class="v">${aed0(p.totalUnpaid)}</div><div class="pc"><span>of total revenue</span><b>${p.unpaidPctOfRevenue == null ? '—' : p.unpaidPctOfRevenue + '%'}</b></div></div>
+      <div class="unp dlink" data-act="dPay" data-a1="OPEN" role="button" tabindex="0" title="Open every invoice still owed"><div class="k">Total unpaid</div><div class="v">${aed0(p.totalUnpaid)}</div><div class="pc"><span>of total revenue</span><b>${p.unpaidPctOfRevenue == null ? '—' : p.unpaidPctOfRevenue + '%'}</b></div></div>
       <div class="aging"><div class="ah">Overdue by</div>
-        <div class="a1"><span>0–30 days</span><b>${aed0(ag.d0_30.amount)}</b></div>
-        <div class="a2"><span>31–60 days</span><b>${aed0(ag.d31_60.amount)}</b></div>
-        <div class="a3"><span>Over 60 days</span><b>${aed0(ag.d60plus.amount)}</b></div>
-        <div class="a0"><span>Not yet due</span><b>${aed0(ag.notDue.amount)}</b></div>
+        <div class="a1 dlink" data-act="dPay" data-a1="D0_30" role="button" tabindex="0"><span>0–30 days</span><b>${aed0(ag.d0_30.amount)}</b></div>
+        <div class="a2 dlink" data-act="dPay" data-a1="D31_60" role="button" tabindex="0"><span>31–60 days</span><b>${aed0(ag.d31_60.amount)}</b></div>
+        <div class="a3 dlink" data-act="dPay" data-a1="D60_PLUS" role="button" tabindex="0"><span>Over 60 days</span><b>${aed0(ag.d60plus.amount)}</b></div>
+        <div class="a0 dlink" data-act="dPay" data-a1="NOT_DUE" role="button" tabindex="0"><span>Not yet due</span><b>${aed0(ag.notDue.amount)}</b></div>
       </div>
     </div></div>`;
 }
@@ -3080,6 +3150,122 @@ ACT.invEmail = async (id) => {
 
 // ================= Payment Report =================
 let PRF = null;
+// ================= wallet ledger =================
+// Every credit and debit on every family wallet (the report behind the dashboard's Wallet balance).
+let WRF = null;
+VIEWS.walletReport = async () => {
+  await loadLookups();
+  if (!WRF) WRF = { from: '', to: '', type: '', search: '', locationId: '', page: 1 };
+  $('page-acts').innerHTML = '<button class="btn sm" data-act="wrCsv">Export Excel</button>';
+  $('view').innerHTML = `<div class="card filters"><div class="fgrid">
+      <div><label class="lbl" for="wr-from">From</label><input class="in" type="date" id="wr-from" value="${esc(WRF.from)}"></div>
+      <div><label class="lbl" for="wr-to">To</label><input class="in" type="date" id="wr-to" value="${esc(WRF.to)}"></div>
+      <div><label class="lbl" for="wr-type">Type</label><select class="sel" id="wr-type">${opt('', 'Credits and debits', !WRF.type)}${opt('CREDIT', 'Credits (money in)', WRF.type === 'CREDIT')}${opt('DEBIT', 'Debits (used / paid out)', WRF.type === 'DEBIT')}</select></div>
+      <div><label class="lbl" for="wr-loc">Location</label><select class="sel" id="wr-loc">${opt('', 'All locations')}${LK.locations.map((l) => opt(l.id, shortLoc(l.name), WRF.locationId === l.id)).join('')}</select></div>
+      <div class="w2"><label class="lbl" for="wr-q">Search</label><input class="in" id="wr-q" value="${esc(WRF.search)}" placeholder="Family name, PR-, mobile or reason (e.g. LA-000123)"></div>
+    </div>
+    <div class="fbar"><div style="display:flex;gap:8px"><button class="btn sm" data-act="wrSearch">Search</button><button class="btn sm ghost" data-act="wrClear">Clear</button></div><span class="fcount" id="wr-count"></span></div></div>
+    <div id="wr-tot"></div>
+    <div class="card tblwrap" id="wr-tbl"><div class="loading">Loading…</div></div>`;
+  $('view').querySelectorAll('.filters input').forEach((i) => i.addEventListener('keydown', (e) => { if (e.key === 'Enter') ACT.wrSearch(); }));
+  ['wr-from', 'wr-to', 'wr-type', 'wr-loc'].forEach((id) => $(id).addEventListener('change', () => ACT.wrSearch()));
+  await loadWalletLedger();
+};
+function wrQs() {
+  const el = (id) => $(id);
+  if (el('wr-from')) Object.assign(WRF, { from: el('wr-from').value, to: el('wr-to').value, type: el('wr-type').value, locationId: el('wr-loc').value, search: el('wr-q').value.trim() });
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries({ from: WRF.from, to: WRF.to, type: WRF.type, locationId: WRF.locationId, search: WRF.search })) if (v) qs.set(k, v);
+  return qs;
+}
+ACT.wrSearch = () => { WRF.page = 1; loadWalletLedger(); };
+ACT.wrClear = () => { WRF = null; go('walletReport'); };
+ACT.wrPage = (p) => { WRF.page = Number(p); loadWalletLedger(); };
+ACT.wrCsv = async () => { try { await fetchFile('/dashboard/wallet-ledger.csv?' + wrQs(), 'Wallet-ledger.csv'); } catch (e) { toast(e.message); } };
+async function loadWalletLedger() {
+  const qs = wrQs(); qs.set('page', WRF.page); qs.set('limit', 100);
+  const box = $('wr-tbl'); if (!box) return;
+  try {
+    const d = await api('/dashboard/wallet-ledger?' + qs), t = d.totals;
+    $('wr-count').innerHTML = `<b>${t.count}</b> entr${t.count === 1 ? 'y' : 'ies'} · ${t.families} famil${t.families === 1 ? 'y' : 'ies'}`;
+    $('wr-tot').innerHTML = `<div class="totbar"><span>Held in wallets now <b>${money(d.now.balance)}</b> <span class="mini">(${d.now.familiesInCredit} in credit)</span></span>
+      <span>Credits <b class="good">${money(t.credits)}</b></span><span>Debits <b>${money(t.debits)}</b></span><span>Net <b>${money(t.net)}</b></span></div>`;
+    const pages = Math.max(1, Math.ceil(t.count / d.limit));
+    box.innerHTML = `<table id="wr-table" class="dir"><thead><tr><th data-col="d">Date</th><th data-col="p">Family</th><th data-col="t">Type</th>
+      <th data-col="a" class="num">Amount</th><th data-col="b" class="num">Balance after</th><th data-col="r">Reason</th><th data-col="i">Invoice</th><th data-col="w" class="num">Wallet today</th></tr></thead>
+      <tbody>${d.data.map((r) => `<tr><td>${dmy(r.date)}</td>
+        <td><a class="lnk" data-act="showWallet" data-a1="${r.guardianId}" data-a2="${esc(r.parent)}">${esc(r.parent)}</a><div class="mini ref">${esc(r.parentRef)}</div></td>
+        <td>${r.type === 'CREDIT' ? '<span class="pill p-good">Credit</span>' : '<span class="pill p-warn">Debit</span>'}</td>
+        <td class="num"><b class="${r.type === 'CREDIT' ? 'good' : ''}">${r.type === 'CREDIT' ? '+' : '−'}${money(r.amount)}</b></td>
+        <td class="num">${money(r.balanceAfter)}</td><td class="cm" title="${esc(r.reason || '')}">${esc(r.reason || '—')}</td>
+        <td>${r.invoiceId ? `<a class="lnk ref" data-act="showInvoice" data-a1="${r.invoiceId}">${esc(r.invoiceNumber)}</a>` : '—'}</td>
+        <td class="num">${money(r.walletBalance)}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">No wallet entries match.</td></tr>'}</tbody></table>
+      ${pages > 1 ? `<div class="fbar"><button class="btn sm ghost" data-act="wrPage" data-a1="${WRF.page - 1}" ${WRF.page <= 1 ? 'disabled' : ''}>‹ Previous</button>
+        <span class="mini">Page ${WRF.page} of ${pages}</span><button class="btn sm ghost" data-act="wrPage" data-a1="${WRF.page + 1}" ${WRF.page >= pages ? 'disabled' : ''}>Next ›</button></div>` : ''}`;
+    resizableTable($('wr-table'), 'wallet');
+  } catch (e) { box.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
+// ================= revenue report =================
+// The figures behind the dashboard's Total revenue card, by month, term or category.
+let RVF = null, RVD = null;
+const RV_GROUPS = [['month', 'By month'], ['term', 'By term'], ['category', 'By category']];
+VIEWS.revenueReport = async () => {
+  await loadLookups();
+  if (!RVF) RVF = { seasonId: '', locationId: '', group: 'month' };
+  const qs = new URLSearchParams();
+  if (RVF.seasonId) qs.set('seasonId', RVF.seasonId);
+  if (RVF.locationId) qs.set('locationId', RVF.locationId);
+  const d = RVD = await api('/dashboard/revenue?' + qs);
+  if (!RVF.seasonId) RVF.seasonId = d.season.id;
+  const rows = RVF.group === 'term' ? d.terms : RVF.group === 'category' ? d.categories : d.months;
+  const t = d.totals;
+  const cells = (r, tag = 'td') => d.streams.map((s) => `<${tag} class="num">${r.streams[s.key] ? money(r.streams[s.key]) : '<span class="mini">—</span>'}</${tag}>`).join('')
+    + `<${tag} class="num"><b>${money(r.collected)}</b></${tag}><${tag} class="num bad">${r.pending ? money(r.pending) : '<span class="mini">—</span>'}</${tag}><${tag} class="num"><b>${money(r.total)}</b></${tag}>`;
+  $('page-acts').innerHTML = '<button class="btn sm ghost" data-act="go" data-a1="dashboard">← Dashboard</button><button class="btn sm" data-act="rvCsv">Export Excel</button>';
+  $('view').innerHTML = `<div class="card filters"><div class="fgrid">
+      <div><label class="lbl" for="rv-season">Season</label><select class="sel" id="rv-season">${LK.seasons.map((s) => opt(s.id, seasonName(s), RVF.seasonId === s.id)).join('')}</select></div>
+      <div><label class="lbl" for="rv-loc">Location</label><select class="sel" id="rv-loc">${opt('', 'All locations')}${LK.locations.map((l) => opt(l.id, shortLoc(l.name), RVF.locationId === l.id)).join('')}</select></div>
+      <div class="w2"><span class="lbl">Group</span><span class="seg">${RV_GROUPS.map(([k, l]) => `<button class="${RVF.group === k ? 'on' : ''}" data-act="rvGroup" data-a1="${k}">${l}</button>`).join('')}</span></div>
+    </div></div>
+    <div class="totbar"><span>Total revenue <b>${money(t.total)}</b></span><span>Collected <b class="good">${money(t.collected)}</b></span>
+      <span>Pending <b class="bad">${money(t.pending)}</b></span><span>Invoices <b>${t.invoices}</b></span></div>
+    <div class="note info" style="margin-bottom:10px">Collected is money actually received, by stream — wallet use and write-offs don't count. Pending is what is still owed on issued invoices.
+      ${RVF.group === 'month' ? 'Months are by invoice date.' : RVF.group === 'term' ? 'Terms are the term each invoice is for.' : 'Categories are the child on each invoice line.'} Click a row for its invoices.</div>
+    <div class="card tblwrap"><table id="rv-tbl" class="dir"><thead><tr><th data-col="l">${RVF.group === 'category' ? 'Category' : RVF.group === 'term' ? 'Term' : 'Month'}</th>
+      ${d.streams.map((s) => `<th class="num" data-col="${s.key}"><i class="sw" style="background:${sc(s.key)}"></i>${esc(s.label)}</th>`).join('')}
+      <th class="num" data-col="c">Collected</th><th class="num" data-col="p">Pending</th><th class="num" data-col="t">Total</th></tr></thead>
+      <tbody>${rows.map((r, i) => `<tr class="clickable" data-act="rvOpen" data-a1="${i}"><td><b>${esc(r.label)}</b></td>${cells(r)}</tr>`).join('')
+        || `<tr><td colspan="${d.streams.length + 4}" class="empty">No invoices in this season yet.</td></tr>`}</tbody>
+      <tfoot><tr><th>Total</th>${cells(t, 'th')}</tr></tfoot></table></div>`;
+  $('rv-season').addEventListener('change', (e) => { RVF.seasonId = e.target.value; go('revenueReport'); });
+  $('rv-loc').addEventListener('change', (e) => { RVF.locationId = e.target.value; go('revenueReport'); });
+  resizableTable($('rv-tbl'), 'revenue');
+};
+ACT.rvGroup = (g) => { RVF.group = g; go('revenueReport'); };
+/** A row of the revenue report → its invoices. */
+ACT.rvOpen = (i) => {
+  const rows = RVF.group === 'term' ? RVD.terms : RVF.group === 'category' ? RVD.categories : RVD.months, r = rows[Number(i)];
+  if (!r) return;
+  IF = { page: 1, wide: IF.wide, sort: '', dir: '', quick: '', seasonId: RVF.seasonId, locationId: RVF.locationId || '' };
+  if (RVF.group === 'month') { IF.invoiceFrom = r.from; IF.invoiceTo = r.to; }
+  if (RVF.group === 'term') IF.termId = r.termId;
+  if (RVF.group === 'category') { const ag = LK.ageGroups.find((a) => a.code === r.key); if (ag) IF.ageGroupId = ag.id; }
+  IF.extra = { billed: 'true' };
+  IF.fromDash = 'Revenue report · ' + r.label + ' · ' + RVD.season.name;
+  invNewSearch(); go('invoices');
+};
+ACT.rvCsv = () => {
+  const d = RVD; if (!d) return;
+  const rows = RVF.group === 'term' ? d.terms : RVF.group === 'category' ? d.categories : d.months;
+  const q = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const line = (label, r) => [label, ...d.streams.map((s) => (r.streams[s.key] || 0).toFixed(2)), r.collected.toFixed(2), r.pending.toFixed(2), r.total.toFixed(2)].map(q).join(',');
+  const csv = '\ufeff' + [[RVF.group === 'category' ? 'Category' : RVF.group === 'term' ? 'Term' : 'Month', ...d.streams.map((s) => s.label + ' (collected)'), 'Collected', 'Pending', 'Total'].map(q).join(','),
+    ...rows.map((r) => line(r.label, r)), line('Total', d.totals)].join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = `Revenue-${d.season.name.replace(/[^\w-]+/g, '-')}-${RVF.group}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+};
+
 VIEWS.paymentReport = async () => {
   await loadLookups();
   const now = new Date(), first = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -3207,6 +3393,7 @@ VIEWS.invoices = async () => {
       <span class="fcount" id="if-count"></span><button class="btn sm ghost" data-act="invCsv">Export Excel</button></div></div>
   <div class="qchips" role="group" aria-label="Quick filters">${INV_QUICK.map(([k, l]) =>
     `<button class="qchip${IF.quick === k ? ' on' : ''}" data-act="invQuick" data-a1="${k}" aria-pressed="${IF.quick === k}">${l}</button>`).join('')}</div>
+  ${IF.fromDash ? `<div class="note info" style="margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">Showing <b>${esc(IF.fromDash)}</b><button class="lnk" data-act="invDashClear">Show every invoice</button></div>` : ''}
   <div id="if-tot"></div>
   <div id="if-bulk"></div>
   <div class="card tblwrap" id="if-tbl"><div class="loading">Loading…</div></div>`;
@@ -3217,6 +3404,9 @@ function readInvFilters() {
   for (const k of IF_KEYS) { const el = $('if-' + k); if (el) IF[k] = el.value.trim(); }
   const qs = new URLSearchParams();
   for (const k of IF_KEYS) if (IF[k]) qs.set(k, IF[k]);
+  // Opened from the dashboard or the revenue report: its season and any owed / due-date filter.
+  if (IF.seasonId) qs.set('seasonId', IF.seasonId);
+  if (IF.extra) for (const [k, v] of Object.entries(IF.extra)) qs.set(k, v);
   const quick = INV_QUICK.find(([k]) => k === IF.quick);
   if (quick) for (const [k, v] of Object.entries(quick[2]())) qs.set(k, v);
   if (IF.sort) { qs.set('sort', IF.sort); qs.set('dir', IF.dir || 'desc'); }
@@ -3225,6 +3415,7 @@ function readInvFilters() {
 /** A new search or filter starts a new selection. */
 function invNewSearch() { IF.page = 1; INV_SEL.clear(); INV_ALL = null; }
 ACT.invSearch = () => { invNewSearch(); loadInvoices(); };
+ACT.invDashClear = () => { invNewSearch(); IF = { page: 1, wide: IF.wide, sort: '', dir: '', quick: '' }; go('invoices'); };
 ACT.invClear = () => { invNewSearch(); IF = { page: 1, wide: IF.wide, sort: '', dir: '', quick: '' }; go('invoices'); };
 ACT.invQuick = (k) => {
   IF.quick = IF.quick === k ? '' : k; invNewSearch();
@@ -3546,12 +3737,13 @@ VIEWS.inventory = async () => {
     <button class="btn sm ghost" data-act="stkMove" data-a1="ADJUST">Stock take</button>` : ''}
     ${can('inventory.create') ? '<button class="btn sm ghost" data-act="stkNew">+ New item</button>' : ''}
     ${(ME?.permissions || []).includes('*') ? '<button class="btn sm ghost" data-act="stkReset" title="Remove every item and movement and start again">Start again…</button>' : ''}`;
-  $('view').innerHTML = `<div class="tabs">${[['stock', 'Stock'], ['moves', 'In & out log'], ['summary', 'By item']].map(([k, t]) =>
+  if (INVF.tab === 'kits' && !can('invoice.view')) INVF.tab = 'stock';
+  $('view').innerHTML = `<div class="tabs">${[['stock', 'Stock'], ['moves', 'In & out log'], ['summary', 'By item'], ...(can('invoice.view') ? [['kits', 'Kit sales']] : [])].map(([k, t]) =>
       `<button class="tab ${INVF.tab === k ? 'on' : ''}" data-act="stkTab" data-a1="${k}">${t}</button>`).join('')}
       <span class="seg">${[['LALIGA', 'LaLiga'], ['ADSC', 'ADSC'], ['', 'Both']].map(([k, t]) =>
       `<button class="${INVF.programme === k ? 'on' : ''}" data-act="stkProg" data-a1="${k}">${t}</button>`).join('')}</span></div>
     <div id="stk-body"><div class="loading">Loading…</div></div>`;
-  await ({ stock: stkStock, moves: stkMoves, summary: stkSummary })[INVF.tab]();
+  await ({ stock: stkStock, moves: stkMoves, summary: stkSummary, kits: stkKits })[INVF.tab]();
 };
 ACT.stkTab = (t) => { INVF.tab = t; go('inventory'); };
 // Super admin only: empty the store (every item and its history) and leave one practice item.
@@ -3594,6 +3786,28 @@ async function stkStock() {
   $('stk-cat').addEventListener('change', (e) => { INVF.category = e.target.value; stkStock(); });
   $('stk-st').addEventListener('change', (e) => { INVF.status = e.target.value; stkStock(); });
   resizableTable($('stk-tbl'), 'stock');
+}
+
+// Kit sales (from invoices): the kits behind the dashboard's Kits sales card, piece by piece.
+async function stkKits() {
+  const qs = new URLSearchParams();
+  if (DASHF.seasonId) qs.set('seasonId', DASHF.seasonId);
+  if (DASHF.locationId) qs.set('locationId', DASHF.locationId);
+  if (INVF.kitType) qs.set('type', INVF.kitType);
+  const d = await api('/dashboard/kit-sales?' + qs), t = d.totals;
+  $('stk-body').innerHTML = `<div class="card filters"><div class="fgrid">
+      <div><label class="lbl" for="kt-type">Kit type</label><select class="sel" id="kt-type">${opt('', 'Every kit type')}${d.types.map((k) => opt(k.key, `${k.label} (${k.units})`, INVF.kitType === k.key)).join('')}</select></div>
+    </div><div class="fbar"><span class="fcount"><b>${t.lines}</b> kit line${t.lines === 1 ? '' : 's'} · <b>${t.units}</b> piece${t.units === 1 ? '' : 's'} · ${money(t.gross)} incl. VAT · ${esc(d.season.name)}${d.location ? ' · ' + esc(shortLoc(d.location.name)) : ''}</span></div></div>
+    <div class="note info" style="margin-bottom:10px">Kits sold on invoices this season (refunded invoices left out). A Development kit is one training kit; an Advanced kit is a training kit and a home kit. Stock taken out of the store is in the In &amp; out log.</div>
+    <div class="card tblwrap"><table id="kt-tbl" class="dir"><thead><tr><th data-col="d">Date</th><th data-col="n">Invoice</th><th data-col="p">Parent</th><th data-col="c">Child</th>
+      <th data-col="cat">Category</th><th data-col="i">Item</th><th data-col="pc">Pieces</th><th data-col="a" class="num">Amount incl. VAT</th><th data-col="s">Status</th></tr></thead>
+      <tbody>${d.rows.map((r) => `<tr><td>${dmy(r.issueDate)}</td><td><a class="lnk ref" data-act="showInvoice" data-a1="${r.invoiceId}">${esc(r.number)}</a></td>
+        <td>${esc(r.parent || '—')}<div class="mini ref">${esc(r.parentRef || '')}</div></td><td>${esc(r.player || '—')}<div class="mini ref">${esc(r.playerRef || '')}</div></td>
+        <td>${esc(r.category || '—')}</td><td title="${esc(r.description)}">${esc(r.description)}</td>
+        <td>${r.pieces.map((p) => `${p.qty}× ${esc(KIT_WORD[p.type] || p.type)}`).join(', ')}</td><td class="num">${money(r.gross)}</td><td>${statusPill(r.status)}</td></tr>`).join('')
+        || '<tr><td colspan="9" class="empty">No kits sold yet this season.</td></tr>'}</tbody></table></div>`;
+  $('kt-type').addEventListener('change', (e) => { INVF.kitType = e.target.value; stkKits(); });
+  resizableTable($('kt-tbl'), 'kits');
 }
 
 async function stkMoves() {
@@ -4588,6 +4802,7 @@ async function boot(){
   ME = await api('/auth/me');
   $('login').style.display='none'; $('app').classList.add('on');
   $('who-name').textContent = ME.fullName; $('who-role').textContent = ME.roleName || ME.role;
+  $('me-av').textContent = initials(ME.fullName);
   renderNav();
   const first = PAGES.find(p=>p.k && (!p.perm || can(p.perm)));
   await go(first ? first.k : 'dashboard');
@@ -4624,6 +4839,12 @@ const ACTIONS = {
   resetSiblingOrder: (...a) => window.resetSiblingOrder(...a),
   runAuto: (...a) => window.runAuto(...a),
 };
+// Clickable cards and blocks (role="button") answer Enter and Space like buttons.
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Enter' && ev.key !== ' ') return;
+  const el = ev.target;
+  if (el?.getAttribute?.('role') === 'button' && el.dataset?.act) { ev.preventDefault(); el.click(); }
+});
 document.addEventListener('click', (ev) => {
   const el = ev.target.closest('[data-act]');
   if (!el) return;

@@ -342,3 +342,19 @@ Karim (12 Oct): U12 Advanced White trains Tue, Wed & Thu 6:00–7:30 pm, U13 Adv
 - [x] **The price list decides sessions a week** rather than a fixed rule per level (the old rule was Development 1–2, Advanced 2–3, HPC 3). Registration, Add term and the move drawer offer every tier the price list has for the category: U9–U18 get 1, 2 or 3, while U6, U8 and Girls get 1 or 2 because the list has no 3× price for them. The default is still the team's own schedule, with a warning when the family pays for a different number.
 - [x] **Squad move:** the drawer lists only the child's own category (U12 → U12 Development / Advanced White / HPC). The server refuses any other team. A new "Sessions a week" choice defaults to the new team's schedule (e.g. U12 Development 2× → U12 Advanced White at 3× = move-up invoice; at 2× = team change only).
 - [x] **Tests** — 118 unit + 151 e2e green (new: White schedules, tiers by price list incl. U8 refusal, move at a chosen tier, other-category refusal). Re-plan checked: a database with the White teams on Tue/Thu, after the seed, gets 27 Wednesday sessions per team from today with nothing removed; a second run changes nothing.
+
+## ✅ Completed — Dashboard: every card opens its report; name and role in the banner — 12 Oct 2026
+
+Karim's list (12 Oct). Each card opens its report with the dashboard's season and location already applied, and the report's numbers match the card (an e2e test checks every one).
+
+- [x] **Wallet balance → Wallet ledger** (new, Finance → Wallet ledger): every credit and debit on every family wallet, with the family's balance after each entry, the invoice it refers to, today's balance, date/type/location/search filters and an Excel export. The "Wallet credit given" tile opens it filtered to credits since the season start.
+- [x] **Registered players → Players** directory, filtered to the season and location.
+- [x] **Players attendance → Attendance** (registers, concerns, by team).
+- [x] **Schedule grid:** click any block (term, pitch booking, match/event, break) for its details. A pitch booking lists the weekly training slots it covers, team by team. A calendar entry can be removed or the calendar opened from there; a session-based match opens its register.
+- [x] **Total revenue → Revenue report** (new, Finance → Revenue report): by month, term or age category; each stream's collected money, pending, total; footer totals; Excel export. Click a row for its invoices.
+- [x] **Kits sales → Inventory → Kit sales** (new tab): every kit line sold this season with its pieces, invoice, family and child. Clicking a bar filters to that kit type. The stock log stays under "In & out log".
+- [x] **Payment status:** Fully paid / Partially paid / Unpaid (legend rows and donut), Unpaid players, Total unpaid and each overdue band open the invoice list filtered to exactly those invoices for the season (new `seasonId` and `billed` filters on the invoice list), with a "Showing … · Show every invoice" line.
+- [x] **Revenue chart:** the "Pending amount" segment and legend entry are removed. Bars show money collected by stream; the line above still gives collected and pending.
+- [x] **Banner:** the signed-in person's name and role (with initials) sit at the top left under the academy name, for every account (super admin, coach…); Password and Sign out stay at the bottom.
+- [x] Clickable cards work from the keyboard (Tab, then Enter).
+- [x] **Tests** — 118 unit + 152 e2e (new: each report against its card, coach access refused). Clicked through on a local copy: every card, block and count matched.
