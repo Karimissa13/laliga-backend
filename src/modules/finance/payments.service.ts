@@ -62,7 +62,7 @@ export class PaymentsService {
     const updated = await this.invoicesService.recomputeStatus(input.invoiceId);
 
     // Overpayment lands in the guardian's wallet instead of being lost.
-    const balance = Number(updated.total) - Number(updated.amountPaid) + Number(updated.amountRefunded);
+    const balance = Number(updated.total) - Number(updated.amountPaid);
     let walletCredit = 0;
     if (balance < -0.009) {
       walletCredit = money(Math.abs(balance));
@@ -89,7 +89,7 @@ export class PaymentsService {
       recordedById: input.recordedById,
     }));
     if (input.toWallet) {
-      await this.creditWallet(invoice.guardianId, input.amount, `Refund from ${invoice.number}`);
+      await this.creditWallet(invoice.guardianId, input.amount, `Refund from ${invoice.number}${input.reason ? ' — ' + input.reason : ''}`);
     }
     // Money paid back reduces the supply: the tax credit note documents it.
     const creditNote = await this.creditNotes.issue({
@@ -111,23 +111,51 @@ export class PaymentsService {
     return w;
   }
 
+  /**
+   * Credit or debit a family wallet. The balance changes in one database statement
+   * (no read-then-write), together with its entry, so two people acting at the same
+   * moment can't lose an amount; a debit never takes the balance below zero.
+   */
   async creditWallet(guardianId: string, amount: number, reason?: string) {
-    const w = await this.getWallet(guardianId);
-    await this.walletTxns.save(this.walletTxns.create({
-      walletId: w.id, type: WalletTxnType.CREDIT, amount: money(amount).toFixed(2), reason,
-    }));
-    await this.wallets.update(w.id, { balance: money(Number(w.balance) + amount).toFixed(2) });
-    return this.getWallet(guardianId);
+    return this.moveWallet(guardianId, WalletTxnType.CREDIT, amount, reason);
   }
 
   async debitWallet(guardianId: string, amount: number, reason?: string) {
+    return this.moveWallet(guardianId, WalletTxnType.DEBIT, amount, reason);
+  }
+
+  private async moveWallet(guardianId: string, type: WalletTxnType, amount: number, reason?: string) {
+    const amt = money(amount);
+    if (!(amt > 0)) throw new BadRequestException('The amount must be more than zero');
     const w = await this.getWallet(guardianId);
-    if (Number(w.balance) < amount) throw new BadRequestException('Insufficient wallet balance');
-    await this.walletTxns.save(this.walletTxns.create({
-      walletId: w.id, type: WalletTxnType.DEBIT, amount: money(amount).toFixed(2), reason,
-    }));
-    await this.wallets.update(w.id, { balance: money(Number(w.balance) - amount).toFixed(2) });
+    await this.wallets.manager.transaction(async (m) => {
+      const res: any = await m.query(
+        type === WalletTxnType.CREDIT
+          ? `UPDATE wallets SET balance = balance + $2, "updatedAt" = now() WHERE id = $1 RETURNING id`
+          : `UPDATE wallets SET balance = balance - $2, "updatedAt" = now() WHERE id = $1 AND balance >= $2 RETURNING id`,
+        [w.id, amt.toFixed(2)]);
+      // For UPDATE … RETURNING the driver answers [rows, rowCount]: no row updated = not enough balance.
+      const updated = Array.isArray(res) && Array.isArray(res[0]) ? res[0].length : Array.isArray(res) ? res.length : 0;
+      if (!updated) throw new BadRequestException('Insufficient wallet balance');
+      await m.getRepository(WalletTransaction).save(m.getRepository(WalletTransaction).create({
+        walletId: w.id, type, amount: amt.toFixed(2), reason,
+      }));
+    });
     return this.getWallet(guardianId);
+  }
+
+  /** A family's invoices that still hold money that could go back to them (paid less refunded). */
+  async refundableInvoices(guardianId: string) {
+    const rows: any[] = await this.invoices.manager.query(
+      `SELECT i.id, i.number, i.status, i."issueDate"::text AS "issueDate", i.total::float AS total,
+              i."amountPaid"::float AS paid, i."amountRefunded"::float AS refunded,
+              (i."amountPaid" - i."amountRefunded")::float AS refundable,
+              (SELECT string_agg(DISTINCT p."firstName" || ' ' || p."lastName", ', ') FROM invoice_line_items li
+                 JOIN players p ON p.id = li."playerId" WHERE li."invoiceId" = i.id) AS children
+       FROM invoices i WHERE i."guardianId" = $1 AND i.status NOT IN ('DRAFT', 'CANCELLED')
+         AND i."amountPaid" - i."amountRefunded" > 0.005
+       ORDER BY i."issueDate" DESC, i.number DESC`, [guardianId]);
+    return rows.map((r) => ({ ...r, refundable: money(r.refundable) }));
   }
 
   /** Pay an invoice from the guardian's wallet credit. */

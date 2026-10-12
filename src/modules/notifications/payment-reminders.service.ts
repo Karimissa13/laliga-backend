@@ -146,7 +146,7 @@ export class PaymentRemindersService {
     const params: any[] = [];
     const p = (v: any) => { params.push(v); return `$${params.length}`; };
     const w = [`i.status IN ('ISSUED', 'PART_PAID')`,
-      `GREATEST(i.total - i."amountPaid" + i."amountRefunded" - i."writeOffAmount", 0) > 0.05`];
+      `GREATEST(i.total - i."amountPaid" - i."writeOffAmount", 0) > 0.05`];
     if (q.search) {
       const s = p(`%${q.search.trim()}%`);
       w.push(`(i.number ILIKE ${s} OR g."fullName" ILIKE ${s} OR g.reference ILIKE ${s} OR g.email ILIKE ${s}
@@ -155,7 +155,7 @@ export class PaymentRemindersService {
     }
     const rows: any[] = await this.ds.query(`
       SELECT i.id, i.number, i.status, i."dueDate"::text AS "dueDate", i.total::float AS total,
-             GREATEST(i.total - i."amountPaid" + i."amountRefunded" - i."writeOffAmount", 0)::float AS balance,
+             GREATEST(i.total - i."amountPaid" - i."writeOffAmount", 0)::float AS balance,
              g.id AS "guardianId", g."fullName" AS parent, g.reference AS "parentRef", g.email,
              (SELECT string_agg(DISTINCT pl."firstName" || ' ' || pl."lastName", ', ') FROM invoice_line_items li JOIN players pl ON pl.id = li."playerId" WHERE li."invoiceId" = i.id) AS children,
              (SELECT max(c."createdAt") AT TIME ZONE 'UTC' FROM communications c WHERE c.kind = 'reminder'

@@ -554,12 +554,14 @@ export class InvoicesService {
     const total = Number(inv.total);
     const writeOff = Number(inv.writeOffAmount);
 
+    // Every refund comes with a tax credit note, which takes that amount off what was
+    // charged — so a refund never re-opens an invoice: settled = paid + written off ≥ total.
     let status: InvoiceStatus = inv.status;
     if (inv.isSponsored) status = InvoiceStatus.SPONSORED;
     else if (inv.status === InvoiceStatus.CANCELLED) status = InvoiceStatus.CANCELLED;
-    else if (writeOff > 0 && net + writeOff >= total - SETTLEMENT_TOLERANCE) status = InvoiceStatus.WRITTEN_OFF;
+    else if (writeOff > 0 && paid + writeOff >= total - SETTLEMENT_TOLERANCE) status = InvoiceStatus.WRITTEN_OFF;
     else if (refunded > 0 && net <= 0) status = InvoiceStatus.REFUNDED;
-    else if (total > 0 && net >= total - SETTLEMENT_TOLERANCE) status = InvoiceStatus.PAID;
+    else if (total > 0 && paid >= total - SETTLEMENT_TOLERANCE) status = InvoiceStatus.PAID;
     else if (net > 0) status = InvoiceStatus.PART_PAID;
     else if (inv.status === InvoiceStatus.DRAFT) status = InvoiceStatus.DRAFT;
     else status = InvoiceStatus.ISSUED;
@@ -582,7 +584,7 @@ export class InvoicesService {
     if (![InvoiceStatus.ISSUED, InvoiceStatus.PART_PAID].includes(inv.status)) {
       throw new BadRequestException(`This invoice is ${String(inv.status).toLowerCase().replace('_', ' ')} — there is nothing to write off.`);
     }
-    const owed = money(Number(inv.total) - Number(inv.amountPaid) + Number(inv.amountRefunded) - Number(inv.writeOffAmount));
+    const owed = money(Number(inv.total) - Number(inv.amountPaid) - Number(inv.writeOffAmount));
     if (amount > owed + 0.009) throw new BadRequestException(`Only ${owed.toFixed(2)} is still owed on ${inv.number}.`);
     await this.invoices.update(id, {
       writeOffAmount: money(Number(inv.writeOffAmount) + amount).toFixed(2),
@@ -627,7 +629,7 @@ export class InvoicesService {
 
     const now = new Date();
     const items = rows.map((i) => {
-      const balance = money(Number(i.total) - Number(i.amountPaid) + Number(i.amountRefunded) - Number(i.writeOffAmount));
+      const balance = money(Number(i.total) - Number(i.amountPaid) - Number(i.writeOffAmount));
       const due = i.dueDate ? new Date(i.dueDate) : null;
       const daysOverdue = due ? Math.floor((now.getTime() - due.getTime()) / 86400000) : 0;
       return {

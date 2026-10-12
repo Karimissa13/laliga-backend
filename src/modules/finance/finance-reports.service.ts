@@ -47,7 +47,7 @@ export const LINE_PACKAGE_SQL = (li: string, i: string) => `CASE WHEN ${li}.stre
     AND e.package IS NOT NULL LIMIT 1)) END`;
 
 const BALANCE_SQL = (i: string) =>
-  `GREATEST(${i}.total - ${i}."amountPaid" + ${i}."amountRefunded" - ${i}."writeOffAmount", 0)`;
+  `GREATEST(${i}.total - ${i}."amountPaid" - ${i}."writeOffAmount", 0)`;
 
 /** Direct money received on an invoice, net of refunds paid back as money. */
 const RECEIVED_SQL = (i: string) => `COALESCE((SELECT sum(CASE WHEN p.direction = 'INBOUND' THEN p.amount ELSE -p.amount END)

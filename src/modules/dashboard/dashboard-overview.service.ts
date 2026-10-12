@@ -256,7 +256,7 @@ export class DashboardOverviewService {
             (SELECT t."locationId" FROM invoice_line_items li JOIN players p ON p.id = li."playerId"
                JOIN teams t ON t.id = p."currentTeamId" WHERE li."invoiceId" = i.id LIMIT 1)) AS loc,
           (SELECT min(tr."startDate") FROM enrolments e JOIN terms tr ON tr.id = e."termId" WHERE e."invoiceId" = i.id) AS "termStart",
-          GREATEST(i.total - i."amountPaid" + i."amountRefunded" - i."writeOffAmount", 0) AS balance,
+          GREATEST(i.total - i."amountPaid" - i."writeOffAmount", 0) AS balance,
           -- Direct money only: wallet use and write-offs are not money received.
           COALESCE((SELECT sum(CASE WHEN p.direction = 'INBOUND' THEN p.amount ELSE -p.amount END)
                     FROM payments p WHERE p."invoiceId" = i.id AND p.status = 'COMPLETED' AND p.method <> 'WALLET'), 0) AS collected
@@ -480,7 +480,7 @@ export class DashboardOverviewService {
    * The wallet ledger behind the "Wallet balance" card: every credit and debit on
    * every family wallet, with each family's balance after the entry.
    */
-  async walletLedger(q: { from?: string; to?: string; type?: string; search?: string; locationId?: string; page?: number; limit?: number }) {
+  async walletLedger(q: { from?: string; to?: string; type?: string; search?: string; locationId?: string; guardianId?: string; page?: number; limit?: number }) {
     const params: any[] = [];
     const p = (v: any) => { params.push(v); return `$${params.length}`; };
     const day = `(t."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Dubai')::date`;
@@ -488,6 +488,7 @@ export class DashboardOverviewService {
     if (q.from) w.push(`${day} >= ${p(q.from)}::date`);
     if (q.to) w.push(`${day} <= ${p(q.to)}::date`);
     if (q.type) w.push(`t.type = ${p(q.type)}`);
+    if (q.guardianId) w.push(`g.id = ${p(q.guardianId)}`);
     if (q.search) {
       const s = p(`%${q.search.trim()}%`);
       w.push(`(g."fullName" ILIKE ${s} OR g.reference ILIKE ${s} OR g.mobile ILIKE ${s} OR t.reason ILIKE ${s})`);

@@ -169,7 +169,7 @@ export class PlayerDirectoryService {
         ) term ON true
         LEFT JOIN LATERAL (
           SELECT i.number, i.status, i."dueDate",
-                 round(i.total - i."amountPaid" + i."amountRefunded" - i."writeOffAmount", 2) AS balance
+                 round(i.total - i."amountPaid" - i."writeOffAmount", 2) AS balance
           FROM invoices i
           JOIN invoice_line_items li ON li."invoiceId" = i.id AND li."playerId" = p.id
           WHERE i.status <> ${p(InvoiceStatus.CANCELLED)} ${termScope}

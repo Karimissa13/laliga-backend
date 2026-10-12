@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMaxSize, ArrayMinSize, ArrayNotEmpty, IsArray, IsBoolean, IsDateString, IsEnum, IsIn, IsInt, IsNumber,
-  IsObject, IsOptional, IsString, IsUUID, Max, MaxLength, Min, ValidateIf, ValidateNested,
+  IsObject, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateIf, ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { MANUAL_PRESET_CODES } from '../manual-discounts';
@@ -100,6 +100,11 @@ export class RefundDto {
   @ApiPropertyOptional() @IsOptional() @IsString() reason?: string;
   @ApiPropertyOptional({ description: 'Credit the guardian wallet instead of paying out' })
   @IsOptional() @IsBoolean() toWallet?: boolean;
+}
+/** Credit for a reason other than a refund (e.g. goodwill): the reason is required. */
+export class WalletCreditDto {
+  @ApiProperty() @IsNumber() @Min(0.01) amount: number;
+  @ApiProperty({ example: 'Goodwill — session cancelled by the academy' }) @IsString() @MinLength(3) @MaxLength(250) reason: string;
 }
 export class WalletAdjustDto {
   @ApiProperty() @IsNumber() @Min(0.01) amount: number;

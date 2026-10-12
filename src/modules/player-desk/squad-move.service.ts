@@ -303,7 +303,7 @@ export class SquadMoveService {
       for (const g of q.groups.filter((x) => x.charge.amount < -0.005 && x.invoiceId)) {
         const amt = -g.charge.amount;
         const inv = await this.invoicing.findOne(g.invoiceId!);
-        const owed = r2(Number(inv.total) - Number(inv.amountPaid) + Number(inv.amountRefunded) - Number(inv.writeOffAmount));
+        const owed = r2(Number(inv.total) - Number(inv.amountPaid) - Number(inv.writeOffAmount));
         const why = `Squad move: ${g.fromTeam} (${g.fromSessions}×/week) → ${toTeam.name} (${g.toSessions}×/week) from ${dmy(q.moveDate)}`;
         const wo = [InvoiceStatus.ISSUED, InvoiceStatus.PART_PAID].includes(inv.status) ? r2(Math.min(owed, amt)) : 0;
         if (wo > 0.005) await this.invoicing.writeOff(inv.id, wo, why, { creditNote: true, actorId });

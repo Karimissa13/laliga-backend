@@ -235,4 +235,39 @@ describe('Payment report, invoice email, parent portal, inventory (e2e)', () => 
       await request(http).get('/api/v1/reports/payments').set({ Authorization: `Bearer ${coachTok}` }).expect(403);
     });
   });
+
+  describe('family wallet (Karim, 12 Oct 2026)', () => {
+    it('refunds a paid invoice into the wallet with a credit note — the invoice is not owed again', async () => {
+      const before = (await request(http).get(`/api/v1/invoices/${invoice.id}`).set(auth()).expect(200)).body;
+      const owedBefore = Number(before.total) - Number(before.amountPaid) - Number(before.writeOffAmount);
+      const refundable = (await request(http).get(`/api/v1/guardians/${g.id}/wallet/refundable`).set(auth()).expect(200)).body;
+      const row = refundable.find((x: any) => x.id === invoice.id);
+      expect(row.refundable).toBeCloseTo(Number(before.amountPaid) - Number(before.amountRefunded), 2);
+      const w0 = Number((await request(http).get(`/api/v1/guardians/${g.id}/wallet`).set(auth())).body.balance);
+
+      const r = (await request(http).post(`/api/v1/invoices/${invoice.id}/refund`).set(auth())
+        .send({ amount: 300, reason: 'Two sessions cancelled by the academy', toWallet: true }).expect(201)).body;
+      expect(r.creditNote.number).toMatch(/^CN-/);
+      expect(r.invoice.status).toBe(before.status);                       // still what it was, not re-opened
+      const reg = (await request(http).get(`/api/v1/invoice-register?invoiceNo=${invoice.number.replace('LA-', '')}`).set(auth())).body.data[0];
+      expect(reg.pending).toBeCloseTo(owedBefore, 2);                      // what is owed didn't grow by the refund
+      const w1 = Number((await request(http).get(`/api/v1/guardians/${g.id}/wallet`).set(auth())).body.balance);
+      expect(w1).toBeCloseTo(w0 + 300, 2);
+
+      // The family statement: newest first, with the balance after each entry and the invoice it came from.
+      const s = (await request(http).get(`/api/v1/dashboard/wallet-ledger?guardianId=${g.id}`).set(auth()).expect(200)).body;
+      expect(s.data[0]).toMatchObject({ type: 'CREDIT', amount: 300, invoiceNumber: invoice.number });
+      expect(s.data[0].reason).toContain('Two sessions cancelled by the academy');
+      expect(s.data[0].balanceAfter).toBeCloseTo(w1, 2);
+      expect(s.data.every((e: any) => e.guardianId === g.id)).toBe(true);
+    });
+
+    it('credits for another reason only with a reason; a debit never goes below zero', async () => {
+      await request(http).post(`/api/v1/guardians/${g.id}/wallet/credit`).set(auth()).send({ amount: 50 }).expect(400);
+      await request(http).post(`/api/v1/guardians/${g.id}/wallet/credit`).set(auth()).send({ amount: 50, reason: 'Goodwill — cancelled session' }).expect(201);
+      const bal = Number((await request(http).get(`/api/v1/guardians/${g.id}/wallet`).set(auth())).body.balance);
+      await request(http).post(`/api/v1/guardians/${g.id}/wallet/debit`).set(auth()).send({ amount: bal + 1, reason: 'Too much' }).expect(400);
+      expect(Number((await request(http).get(`/api/v1/guardians/${g.id}/wallet`).set(auth())).body.balance)).toBeCloseTo(bal, 2);
+    });
+  });
 });

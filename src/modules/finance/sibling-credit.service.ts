@@ -159,7 +159,7 @@ export class SiblingCreditService {
       await this.payments.creditWallet(trigger.guardianId, total,
         `Sibling discount credit — ${childName}, ${termName} (${inv.number})`);
       credited = true;
-      const balance = money(Number(inv.total) - Number(inv.amountPaid) + Number(inv.amountRefunded) - Number(inv.writeOffAmount));
+      const balance = money(Number(inv.total) - Number(inv.amountPaid) - Number(inv.writeOffAmount));
       if (balance > 0) {
         appliedAmt = money(Math.min(balance, total));
         await this.payments.payFromWallet(inv.id, appliedAmt, ctx.actorId);

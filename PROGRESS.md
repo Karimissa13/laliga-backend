@@ -400,3 +400,17 @@ Karim (12 Oct): after recording a payment the invoice "disappeared" from the inv
 **Invoice list:** keeps the last search again (Karim). The "Filtered — …" line with "Show every invoice" stays.
 
 **Tests:** 121 unit + 153 e2e.
+
+## ✅ Completed — Family wallet; refunds no longer re-open invoices — 12 Oct 2026
+
+Karim (12 Oct), after comparing with the old admin's wallet page (Parents → Wallet: name, balance, "Add Amount" with status, debit/credit, amount, document, remarks; table with debit, credit, remarks, status, date, balance):
+
+- [x] **Family wallet page** (player page → Wallet, Guardians, Wallet ledger): a banner with the balance and **+ Add to wallet**, then the statement (#, date/time, debit, credit, balance after, remarks, invoice).
+- [x] **Add to wallet**, the two ways Karim chose:
+  - **Refund a paid invoice into the wallet:** pick one of the family's paid invoices (it shows what can still be refunded), the amount and a reason. Recorded as a refund on that invoice with a tax credit note; the wallet entry names the invoice and the reason.
+  - **Credit for another reason** (e.g. goodwill): amount and a required reason; no invoice, no credit note.
+- [x] **Wallet ledger → + Add to wallet:** find the family, then the same page.
+- [x] **Wallet moves are safe:** each credit or debit changes the balance in one database statement with its entry, so two people at once can't lose an amount, and a debit can never take a wallet below zero.
+- [x] **Fixed: a refund re-opened the invoice.** Every refund issues a tax credit note, which reduces what the family was charged, but the balance formula added refunds back. A refund of a paid invoice turned it into "Partial payment", owing the refunded amount (and it would have been sent reminders). The same happened with a move-down credit to the wallet. Now owed = total − paid − written off everywhere (19 places: lists, reports, dashboard, reminders, parent portal, PDFs…). The invoice status uses the same rule, and instalments ignore refunds. Money collected is still net of refunds.
+- [x] Not carried over from the old page: the "document" upload (no file storage yet) and the "status" (used / not used), which the new statement shows as debit/credit entries.
+- [x] **Tests:** 121 unit + 155 e2e (refund into the wallet keeps the invoice's status and balance, reason required on a credit, no debit below zero).

@@ -27,6 +27,7 @@ export class WalletLedgerQueryDto {
   @ApiPropertyOptional({ enum: ['CREDIT', 'DEBIT'] }) @IsOptional() @IsIn(['CREDIT', 'DEBIT']) type?: string;
   @ApiPropertyOptional({ description: 'Family name, PR- number, mobile or reason' }) @IsOptional() @IsString() @MaxLength(100) search?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() locationId?: string;
+  @ApiPropertyOptional({ description: 'One family' }) @IsOptional() @IsUUID() guardianId?: string;
   @ApiPropertyOptional({ default: 1 }) @IsOptional() @Transform(numParam) @IsInt() @Min(1) page?: number;
   @ApiPropertyOptional({ default: 100 }) @IsOptional() @Transform(numParam) @IsInt() @Min(1) @Max(500) limit?: number;
 }

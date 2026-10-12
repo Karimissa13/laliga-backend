@@ -326,6 +326,13 @@ table.dir td.em{max-width:200px;overflow:hidden;text-overflow:ellipsis}
 .dcard{padding:14px 16px;min-width:0;display:flex;flex-direction:column}
 /* Dashboard: cards and blocks that open the report behind them */
 .remframe{height:620px}
+/* Family wallet (laid out like the old admin's wallet page) */
+.fwban{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--line);border-left:4px solid var(--coral);border-radius:10px;padding:14px 16px;margin-bottom:12px}
+.fwban .fwk{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600}
+.fwban .fwn{font-family:"Archivo",system-ui,sans-serif;font-size:26px;font-weight:800;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+.fwadd{padding:14px 16px;margin-bottom:12px}
+.fwaddh{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.fwtbl td.good{color:var(--good)}
 .dlink{cursor:pointer;transition:border-color .15s,box-shadow .15s,background .15s}
 .card.dlink:hover{border-color:var(--coral);box-shadow:0 2px 10px rgba(0,0,0,.06)}
 .pr.dlink:hover,.ptile.dlink:hover,.unp.dlink:hover,.aging .dlink:hover{background:var(--surface-2)}

@@ -1571,13 +1571,97 @@ ACT.gSave = async (id) => {
     if (CURRENT === 'guardians') loadGuardians(); else if (PLAYER && $('page-title').textContent === 'Player') reloadPlayer(); }
   catch (e) { $('ge-err').innerHTML = `<div class="note bad">${esc(e.message)}</div>`; }
 };
-window.showWallet = async (id,name) => {
-  openDrawer(name+' — wallet','<div class="loading">Loading…</div>');
-  try{ const w = await api(`/guardians/${id}/wallet`);
-    openDrawer(name+' — wallet', `<dl class="kv"><dt>Balance</dt><dd style="font-family:Archivo,system-ui,sans-serif;font-size:20px;font-weight:800">${money(w.balance)}</dd></dl>
-      <h3 style="font-size:13px;margin-bottom:8px">Transactions</h3>
-      ${(w.transactions||[]).length?`<table><tbody>${w.transactions.map(t=>`<tr><td>${dt(t.createdAt)}</td><td>${statusPill(t.type)}</td><td class="num">${money(t.amount)}</td><td class="mini">${esc(t.reason||'')}</td></tr>`).join('')}</tbody></table>`:'<div class="mini">No transactions.</div>'}`);
-  }catch(e){ openDrawer(name, `<div class="empty">${esc(e.message)}</div>`); }
+// ---------- family wallet ----------
+// Laid out like the old admin's wallet page: a banner with the balance and "Add to wallet",
+// then every entry with the balance after it. Two ways to add money (Karim, 12 Oct):
+//  · Refund a paid invoice into the wallet — a refund with a tax credit note, as refunds are today;
+//  · Credit for another reason (e.g. goodwill) — the reason is required.
+let FW = null;   // { id, name, add: null | 'refund' | 'credit', refundable }
+window.showWallet = async (id, name) => { FW = { id, name: name || 'Family', add: null, refundable: null }; await fwRender(); };
+async function fwRender() {
+  let w, s;
+  try {
+    [w, s] = await Promise.all([api(`/guardians/${FW.id}/wallet`), api(`/dashboard/wallet-ledger?guardianId=${FW.id}&limit=500`)]);
+  } catch (e) { return openDrawer(FW.name, `<div class="empty">${esc(e.message)}</div>`); }
+  const canRefund = can('refund.create') && can('invoice.view'), canCredit = can('wallet.manage');
+  const rows = s.data;
+  const ref = rows[0]?.parentRef || '';
+  openDrawer(`Wallet — ${FW.name}`, `
+    <div class="fwban"><div><div class="fwk">Wallet balance</div><div class="fwn">${money(w.balance)}</div>
+        <div class="mini">${esc(FW.name)}${ref ? ' · <span class="ref">' + esc(ref) + '</span>' : ''} · credit ${money(s.totals.credits)} · used ${money(s.totals.debits)}</div></div>
+      ${canRefund || canCredit ? `<button class="btn" data-act="fwAdd" data-a1="${canRefund ? 'refund' : 'credit'}">+ Add to wallet</button>` : ''}</div>
+    <div id="fw-add">${FW.add ? '' : ''}</div>
+    <h3 class="dh3">Statement</h3>
+    <div class="tblwrap"><table class="fwtbl"><thead><tr><th>#</th><th>Date / time</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th><th>Remarks</th><th>Invoice</th></tr></thead>
+      <tbody>${rows.map((t, i) => `<tr><td class="mini">${rows.length - i}</td><td>${dtm(t.at)}</td>
+        <td class="num">${t.type === 'DEBIT' ? money(t.amount) : ''}</td><td class="num good">${t.type === 'CREDIT' ? money(t.amount) : ''}</td>
+        <td class="num"><b>${money(t.balanceAfter)}</b></td><td class="cm" title="${esc(t.reason || '')}">${esc(t.reason || '—')}</td>
+        <td>${t.invoiceId ? `<a class="lnk ref" data-act="showInvoice" data-a1="${t.invoiceId}">${esc(t.invoiceNumber)}</a>` : '—'}</td></tr>`).join('')
+        || '<tr><td colspan="7" class="empty">No wallet entries yet.</td></tr>'}</tbody></table></div>`, true);
+  if (FW.add) fwAddForm();
+}
+ACT.fwAdd = async (kind) => { FW.add = kind; await fwAddForm(); };
+async function fwAddForm() {
+  const box = $('fw-add'); if (!box) return;
+  const canRefund = can('refund.create') && can('invoice.view'), canCredit = can('wallet.manage');
+  if (FW.add === 'refund' && !FW.refundable) FW.refundable = await api(`/guardians/${FW.id}/wallet/refundable`).catch(() => []);
+  const inv = FW.refundable || [];
+  const type = `<div class="seg fwseg">${canRefund ? `<button class="${FW.add === 'refund' ? 'on' : ''}" data-act="fwAdd" data-a1="refund">Refund a paid invoice</button>` : ''}
+    ${canCredit ? `<button class="${FW.add === 'credit' ? 'on' : ''}" data-act="fwAdd" data-a1="credit">Credit for another reason</button>` : ''}</div>`;
+  const refund = `<div class="frm">
+      <div class="full"><label class="lbl" for="fw-inv">Paid invoice</label><select class="sel" id="fw-inv">${inv.length ? inv.map((i) =>
+        opt(i.id, `${i.number} · ${i.children || '—'} · paid ${money(i.paid - i.refunded)} · issued ${dmy(i.issueDate)}`)).join('') : opt('', 'This family has no paid invoice to refund')}</select></div>
+      <div><label class="lbl" for="fw-amt">Amount to refund into the wallet (AED)</label><input class="in" id="fw-amt" type="number" step="0.01" min="0.01" ${inv[0] ? `max="${inv[0].refundable}" placeholder="up to ${inv[0].refundable.toFixed(2)}"` : 'disabled'}></div>
+      <div class="full"><label class="lbl" for="fw-rsn">Reason</label><input class="in" id="fw-rsn" maxlength="200" placeholder="e.g. Child withdrew after Term 1 — refund of Term 2 and 3"></div></div>
+    <div class="note info" style="margin-top:8px">Recorded as a refund on that invoice with a <b>tax credit note</b>, and the amount is added to the family wallet. The invoice doesn't become owed again.</div>`;
+  const credit = `<div class="frm">
+      <div><label class="lbl" for="fw-amt">Amount to add (AED)</label><input class="in" id="fw-amt" type="number" step="0.01" min="0.01"></div>
+      <div class="full"><label class="lbl" for="fw-rsn">Reason (required)</label><input class="in" id="fw-rsn" maxlength="250" placeholder="e.g. Goodwill — sessions cancelled by the academy in October"></div></div>
+    <div class="note warn" style="margin-top:8px">A credit for another reason is not linked to an invoice and has no credit note. Use "Refund a paid invoice" when money the family paid is being given back.</div>`;
+  box.innerHTML = `<div class="card fwadd"><div class="fwaddh"><b>Add to wallet</b>${type}</div>${FW.add === 'refund' ? refund : credit}
+    <div id="fw-err" style="margin-top:8px"></div>
+    <div class="row-end"><button class="btn ghost" data-act="fwCancel">Cancel</button><button class="btn" id="fw-go" data-act="fwSave" ${FW.add === 'refund' && !inv.length ? 'disabled' : ''}>${FW.add === 'refund' ? 'Refund into the wallet' : 'Add credit'}</button></div></div>`;
+  const sel = $('fw-inv');
+  if (sel) sel.addEventListener('change', () => { const i = inv.find((x) => x.id === sel.value); const a = $('fw-amt'); if (i && a) { a.max = i.refundable; a.placeholder = 'up to ' + i.refundable.toFixed(2); } });
+}
+ACT.fwCancel = () => { FW.add = null; $('fw-add').innerHTML = ''; };
+ACT.fwSave = async () => {
+  const amount = Number($('fw-amt')?.value), reason = ($('fw-rsn')?.value || '').trim(), err = $('fw-err');
+  if (!(amount > 0)) { err.innerHTML = '<div class="note bad">Enter an amount.</div>'; return; }
+  if (reason.length < 3) { err.innerHTML = '<div class="note bad">Give a reason (at least 3 characters).</div>'; return; }
+  const go = $('fw-go'); go.disabled = true;
+  try {
+    if (FW.add === 'refund') {
+      const invId = $('fw-inv').value, i = (FW.refundable || []).find((x) => x.id === invId);
+      if (!i) throw new Error('Choose an invoice');
+      if (amount > i.refundable + 0.005) throw new Error(`At most ${money(i.refundable)} can be refunded on ${i.number}.`);
+      if (!confirm(`Refund ${money(amount)} of ${i.number} into ${FW.name}'s wallet? A tax credit note will be issued.`)) { go.disabled = false; return; }
+      const r = await api(`/invoices/${invId}/refund`, { method: 'POST', body: JSON.stringify({ amount, reason, toWallet: true }) });
+      toast(`${money(amount)} added to the wallet${r.creditNote ? ' — credit note ' + r.creditNote.number : ''}`);
+    } else {
+      if (!confirm(`Add ${money(amount)} to ${FW.name}'s wallet for: "${reason}"?`)) { go.disabled = false; return; }
+      await api(`/guardians/${FW.id}/wallet/credit`, { method: 'POST', body: JSON.stringify({ amount, reason }) });
+      toast(`${money(amount)} added to the wallet`);
+    }
+    FW.add = null; FW.refundable = null; await fwRender();
+    if (CURRENT === 'walletReport') loadWalletLedger();
+    if (PLAYER && CURRENT === 'players' && SCREEN.k === 'player') reloadPlayer();
+  } catch (e) { err.innerHTML = `<div class="note bad">${esc(e.message)}</div>`; go.disabled = false; }
+};
+// Wallet ledger → "Add to wallet": find the family first.
+ACT.wrAddPick = () => {
+  openDrawer('Add to a family wallet', `<div class="frm"><div class="full"><label class="lbl" for="wp-q">Find the family</label>
+    <input class="in" id="wp-q" placeholder="Parent name, PR- number, email or mobile" autocomplete="off"></div></div><div id="wp-res" style="margin-top:10px"></div>`);
+  let t = null;
+  $('wp-q').addEventListener('input', (e) => { clearTimeout(t); t = setTimeout(async () => {
+    const q = e.target.value.trim(), box = $('wp-res'); if (q.length < 2) { box.innerHTML = ''; return; }
+    try {
+      const r = await api('/guardians?limit=20&search=' + encodeURIComponent(q));
+      box.innerHTML = (r.data || []).map((g) => `<div class="lookup-hit"><div><b>${esc(g.fullName)}</b> <span class="ref">${esc(g.reference)}</span><div class="mini">${esc(g.email || '')} ${esc(g.mobile || '')}</div></div>
+        <button class="btn sm" data-act="showWallet" data-a1="${g.id}" data-a2="${esc(g.fullName)}">Open wallet</button></div>`).join('') || '<div class="mini">No family found.</div>';
+    } catch (er) { box.innerHTML = `<div class="mini">${esc(er.message)}</div>`; }
+  }, 250); });
+  $('wp-q').focus();
 };
 
 // ================= trials & leads =================
@@ -3328,7 +3412,7 @@ let WRF = null;
 VIEWS.walletReport = async () => {
   await loadLookups();
   if (!WRF) WRF = { from: '', to: '', type: '', search: '', locationId: '', page: 1 };
-  $('page-acts').innerHTML = '<button class="btn sm" data-act="wrCsv">Export Excel</button>';
+  $('page-acts').innerHTML = `${can('wallet.manage') || can('refund.create') ? '<button class="btn sm" data-act="wrAddPick">+ Add to wallet</button>' : ''}<button class="btn sm ghost" data-act="wrCsv">Export Excel</button>`;
   $('view').innerHTML = `<div class="card filters"><div class="fgrid">
       <div><label class="lbl" for="wr-from">From</label><input class="in" type="date" id="wr-from" value="${esc(WRF.from)}"></div>
       <div><label class="lbl" for="wr-to">To</label><input class="in" type="date" id="wr-to" value="${esc(WRF.to)}"></div>
@@ -3802,7 +3886,7 @@ window.showInvoice = async (id) => {
     const pays = (i.payments || []).filter((p) => p.status === 'COMPLETED');
     const sum = (f) => pays.filter(f).reduce((s, p) => s + (p.direction === 'REFUND' ? -1 : 1) * Number(p.amount), 0);
     const received = sum((p) => p.method !== 'WALLET'), wallet = sum((p) => p.method === 'WALLET');
-    const bal = Math.max(0, Number(i.total) - Number(i.amountPaid) + Number(i.amountRefunded) - Number(i.writeOffAmount));
+    const bal = Math.max(0, Number(i.total) - Number(i.amountPaid) - Number(i.writeOffAmount));
     const open = ['ISSUED', 'PART_PAID'].includes(i.status) && bal > 0.05;
     const row = (k, v, cls) => `<div class="irow ${cls || ''}"><span>${k}</span><span class="num">${v}</span></div>`;
     openDrawer('Invoice ' + i.number, `

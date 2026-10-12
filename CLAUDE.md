@@ -28,7 +28,7 @@ npm run build
 DATABASE_URL=postgresql://… DB_SYNCHRONIZE=false node dist/database/migrate.js
 node dist/database/seed.js && node dist/database/seed-academy.js
 npm test                       # unit (121)
-npm run test:e2e               # e2e (153) — needs a seeded DB in DATABASE_URL
+npm run test:e2e               # e2e (155) — needs a seeded DB in DATABASE_URL
 npm run db:migration:check     # fails if entities changed without a migration
 ```
 Test logins on a non-live DB: admin@laligaacademy.local / Admin@12345, sergio@laligaacademy.local / Coach@12345.

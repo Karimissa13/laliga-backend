@@ -109,7 +109,7 @@ export class ParentPortalService {
           .map((pu) => (pu.package && pu.terms.length > 1 ? `${pu.label} (${pu.termsText})` : pu.label)),
       })),
       invoices: invs.map((i) => {
-        const balance = Math.max(0, Number(i.total) - Number(i.amountPaid) + Number(i.amountRefunded) - Number(i.writeOffAmount));
+        const balance = Math.max(0, Number(i.total) - Number(i.amountPaid) - Number(i.writeOffAmount));
         return { id: i.id, number: i.number, date: i.issueDate, dueDate: i.dueDate, total: Number(i.total), balance: Math.round(balance * 100) / 100, status: i.status };
       }),
     };

@@ -115,7 +115,7 @@ export class PlayerDeskService {
     const seen = new Set<string>();
     const invoices = invoiceRows.filter((l) => !seen.has(l.invoiceId) && seen.add(l.invoiceId)).map((l) => {
       const i = (l as any).invoice as Invoice;
-      const balance = money(Number(i.total) - Number(i.amountPaid) + Number(i.amountRefunded) - Number(i.writeOffAmount));
+      const balance = money(Number(i.total) - Number(i.amountPaid) - Number(i.writeOffAmount));
       const state = paymentStateOf(i.status);
       return {
         id: i.id, number: i.number, status: i.status, issueDate: i.issueDate, dueDate: i.dueDate,
@@ -736,7 +736,7 @@ export class PlayerDeskService {
       }),
     ]);
     const outstanding = invs.reduce((s, i) =>
-      s + Math.max(0, Number(i.total) - Number(i.amountPaid) + Number(i.amountRefunded) - Number(i.writeOffAmount)), 0);
+      s + Math.max(0, Number(i.total) - Number(i.amountPaid) - Number(i.writeOffAmount)), 0);
     return {
       id: g.id,
       viewingAs: { name: g.fullName, reference: g.reference, email: g.email, mobile: g.mobile },
@@ -749,7 +749,7 @@ export class PlayerDeskService {
         const state = paymentStateOf(i.status);
         return {
           number: i.number, issueDate: i.issueDate, dueDate: i.dueDate, total: Number(i.total),
-          balance: money(Number(i.total) - Number(i.amountPaid) + Number(i.amountRefunded) - Number(i.writeOffAmount)),
+          balance: money(Number(i.total) - Number(i.amountPaid) - Number(i.writeOffAmount)),
           status: PAYMENT_STATE_LABEL[state] + (isOverdue(i.status, i.dueDate) ? ' · overdue' : ''),
         };
       }),

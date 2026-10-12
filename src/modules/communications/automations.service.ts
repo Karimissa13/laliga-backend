@@ -39,7 +39,7 @@ export class AutomationsService {
   ) {}
 
   private balance(i: Invoice) {
-    return Number(i.total) - Number(i.amountPaid) + Number(i.amountRefunded) - Number(i.writeOffAmount);
+    return Number(i.total) - Number(i.amountPaid) - Number(i.writeOffAmount);
   }
 
   /** Remind guardians about overdue invoices. */

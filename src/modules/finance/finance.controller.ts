@@ -17,7 +17,7 @@ import { DomainEvents } from '../../common/domain-events';
 import { CreateProductDto, UpdatePriceEntryDto, UpdateProductDto } from './dto/pricing.dto';
 import {
   CreateDiscountDto, CreateFeeDto, GenerateInvoiceDto, RecordPaymentDto, RefundDto,
-  SponsorDto, UpdateDiscountDto, UpdateFeeDto, WalletAdjustDto, WriteOffDto, SetSiblingOrderDto,
+  SponsorDto, UpdateDiscountDto, UpdateFeeDto, WalletAdjustDto, WalletCreditDto, WriteOffDto, SetSiblingOrderDto,
   InvoiceFilterDto, AdjustInvoiceDto, SetInstalmentsDto, InstalmentFlagDto, WaiveInstalmentDto,
 } from './dto/finance.dto';
 import { PaginationDto } from '../../common/dto/pagination.dto';
@@ -222,8 +222,13 @@ export class FinanceController {
   @Get('guardians/:id/wallet') @RequirePermissions('wallet.view')
   wallet(@Param('id') id: string) { return this.payments.getWallet(id); }
 
+  @Get('guardians/:id/wallet/refundable') @RequirePermissions('wallet.view', 'invoice.view')
+  @ApiOperation({ summary: "The family's invoices with money that could be refunded into the wallet" })
+  refundable(@Param('id') id: string) { return this.payments.refundableInvoices(id); }
+
   @Post('guardians/:id/wallet/credit') @RequirePermissions('wallet.manage') @Audit('wallet.credit', 'guardian')
-  credit(@Param('id') id: string, @Body() dto: WalletAdjustDto) {
+  @ApiOperation({ summary: 'Credit the wallet for a reason other than a refund (e.g. goodwill) — the reason is required' })
+  credit(@Param('id') id: string, @Body() dto: WalletCreditDto) {
     return this.payments.creditWallet(id, dto.amount, dto.reason);
   }
   @Post('guardians/:id/wallet/debit') @RequirePermissions('wallet.manage') @Audit('wallet.debit', 'guardian')
@@ -236,7 +241,7 @@ export class FinanceController {
   @ApiOperation({ summary: 'Create an online checkout link for a parent to pay' })
   async checkout(@Param('id') id: string) {
     const inv = await this.invoices.findOne(id);
-    const balance = Number(inv.total) - Number(inv.amountPaid) + Number(inv.amountRefunded);
+    const balance = Number(inv.total) - Number(inv.amountPaid);
     const session = await this.gateway.createCheckout({
       invoiceId: inv.id, invoiceNumber: inv.number, amount: balance, customerEmail: inv.guardian?.email,
     });

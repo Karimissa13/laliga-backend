@@ -51,7 +51,7 @@ export class CommunicationsService {
       });
       const map = new Map<string, Guardian>();
       open.forEach((i) => {
-        const bal = Number(i.total) - Number(i.amountPaid) + Number(i.amountRefunded) - Number(i.writeOffAmount);
+        const bal = Number(i.total) - Number(i.amountPaid) - Number(i.writeOffAmount);
         if (bal > 0.009 && i.guardian) map.set(i.guardian.id, i.guardian);
       });
       return [...map.values()];

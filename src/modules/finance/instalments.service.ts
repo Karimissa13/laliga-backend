@@ -30,8 +30,9 @@ export class InstalmentsService {
     return rows.map((r) => ({ seq: r.seq, percent: Number(r.percent), amount: Number(r.amount), dueDate: r.dueDate, flag: r.flag,
       waivedAmount: Number(r.waivedAmount), waivedReason: r.waivedReason ?? null }));
   }
+  /** Money paid towards the plan. Refunds are left out: each comes with a credit note, so it never re-opens an instalment. */
   private ledger(pays: Payment[]): LedgerPayment[] {
-    return pays.filter((p) => p.status === PaymentStatus.COMPLETED)
+    return pays.filter((p) => p.status === PaymentStatus.COMPLETED && p.direction !== 'REFUND')
       .sort((a, b) => new Date(a.paidAt).getTime() - new Date(b.paidAt).getTime())
       .map((p) => ({ amount: Number(p.amount), direction: p.direction as any, instalmentSeq: p.instalmentSeq ?? null }));
   }
@@ -51,7 +52,7 @@ export class InstalmentsService {
       ? allocate(plan, this.ledger(inv.payments || []), { genericWriteOff: r2(Number(inv.writeOffAmount) - waived) })
       : [];
     const total = Number(inv.total);
-    const balance = r2(Math.max(0, total - Number(inv.amountPaid) + Number(inv.amountRefunded) - Number(inv.writeOffAmount)));
+    const balance = r2(Math.max(0, total - Number(inv.amountPaid) - Number(inv.writeOffAmount)));
     const next = views.find((v) => v.remaining > 0.005) ?? null;
     const editable = ![InvoiceStatus.CANCELLED, InvoiceStatus.PAID, InvoiceStatus.REFUNDED, InvoiceStatus.WRITTEN_OFF, InvoiceStatus.SPONSORED].includes(inv.status);
     return {
