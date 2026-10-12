@@ -134,7 +134,11 @@ function navPush() {
 }
 /** Before showing screen `k`: remember the one we leave, unless this is a fresh start or a step back. */
 function navBefore(k, opts, same) {
-  if (opts.root) NAV.length = 0;
+  if (opts.root) {
+    NAV.length = 0;
+    // From the side menu the invoice list opens unfiltered, so nothing is hidden by an old search.
+    if (k === 'invoices') { IF = { page: 1, wide: IF.wide, sort: '', dir: '', quick: '' }; INV_SEL.clear(); INV_ALL = null; INV_KEEP.clear(); }
+  }
   else if (!opts.back && !same) {
     const top = NAV[NAV.length - 1];
     if (top && top.k === k && !top.id && !top.report) NAV.pop();   // e.g. "← All players" from a player
@@ -3461,6 +3465,7 @@ VIEWS.invoices = async () => {
   <div class="qchips" role="group" aria-label="Quick filters">${INV_QUICK.map(([k, l]) =>
     `<button class="qchip${IF.quick === k ? ' on' : ''}" data-act="invQuick" data-a1="${k}" aria-pressed="${IF.quick === k}">${l}</button>`).join('')}</div>
   ${IF.fromDash ? `<div class="note info" style="margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">Showing <b>${esc(IF.fromDash)}</b><button class="lnk" data-act="invDashClear">Show every invoice</button></div>` : ''}
+  <div id="if-active"></div>
   <div id="if-tot"></div>
   <div id="if-bulk"></div>
   <div class="card tblwrap" id="if-tbl"><div class="loading">Loading…</div></div>`;
@@ -3479,9 +3484,35 @@ function readInvFilters() {
   if (IF.sort) { qs.set('sort', IF.sort); qs.set('dir', IF.dir || 'desc'); }
   return qs;
 }
-/** A new search or filter starts a new selection. */
-function invNewSearch() { IF.page = 1; INV_SEL.clear(); INV_ALL = null; }
+/** A new search or filter starts a new selection (and forgets invoices kept in view after an update). */
+function invNewSearch() { IF.page = 1; INV_SEL.clear(); INV_ALL = null; INV_KEEP.clear(); }
+// Invoices updated from this list (a payment, write-off, refund…) stay in view even when they
+// no longer match the filters — e.g. "Invoice issued" after it becomes "Partial payment".
+const INV_KEEP = new Set();
+function invKeep(id) { if (CURRENT === 'invoices') { INV_KEEP.add(id); loadInvoices(); } }
+/** The payment status in words: Invoice issued, Partial payment, Instalment 2 of 3 paid, Paid… */
+const INV_STATUS_CLS = { PAID: 'p-good', SPONSORED: 'p-info', PART_PAID: 'p-warn', ISSUED: 'p-info', DRAFT: 'p-mute', CANCELLED: 'p-mute', REFUNDED: 'p-mute', WRITTEN_OFF: 'p-mute' };
+const invStatusPill = (i) => `<span class="pill ${INV_STATUS_CLS[i.status] || 'p-mute'}">${esc(i.statusLabel || String(i.status || '').replace(/_/g, ' '))}</span>`;
 ACT.invSearch = () => { invNewSearch(); loadInvoices(); };
+/** Which filters are on, in words, with one click to show every invoice — so nothing is hidden by surprise. */
+const INV_FILTER_WORD = { keyword: 'Search', invoiceNo: 'Invoice no.', playerNo: 'Player no.', parentNo: 'Parent no.', status: 'Status', method: 'Method',
+  additional: 'Additional', custom: 'Custom', ageGroupId: 'Category', locationId: 'Location', termId: 'Term', seasonId: 'Season', invoiceFrom: 'Invoice from',
+  invoiceTo: 'Invoice to', paymentFrom: 'Paid from', paymentTo: 'Paid to', amountFrom: 'Amount from', amountTo: 'Amount up to', open: 'Still owed',
+  dueFrom: 'Due from', dueTo: 'Due to', hasPlan: 'Has instalments', billed: 'Issued invoices only', package: 'Term option' };
+function renderInvActive(qs) {
+  const box = $('if-active'); if (!box) return;
+  const val = (k, v) => k === 'status' ? (INV_STATUS.find(([s]) => s === v)?.[1] || v)
+    : k === 'ageGroupId' ? (LK.ageGroups.find((a) => a.id === v)?.code || v)
+    : k === 'locationId' ? shortLoc(LK.locations.find((l) => l.id === v)?.name || v)
+    : k === 'termId' ? (LK.terms.find((t) => t.id === v)?.name || v)
+    : k === 'seasonId' ? (LK.seasons.find((s) => s.id === v)?.name || v)
+    : k === 'package' ? (PK_SHORT[v] || (v === 'OTHER' ? 'Other' : v))
+    : /From$|To$/.test(k) && /^\d{4}-/.test(v) ? dmy(v) : v === 'true' ? '' : v;
+  const on = [...qs.entries()].filter(([k]) => INV_FILTER_WORD[k] && !IF.fromDash);
+  const parts = on.map(([k, v]) => { const x = val(k, v); return `<span class="chip">${esc(INV_FILTER_WORD[k])}${x ? ': ' + esc(x) : ''}</span>`; });
+  box.innerHTML = parts.length ? `<div class="note warn" style="margin-bottom:10px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">Filtered — only matching invoices are shown: ${parts.join(' ')}
+    <button class="lnk" data-act="invDashClear">Show every invoice</button></div>` : '';
+}
 ACT.invDashClear = () => { invNewSearch(); IF = { page: 1, wide: IF.wide, sort: '', dir: '', quick: '' }; go('invoices'); };
 ACT.invClear = () => { invNewSearch(); IF = { page: 1, wide: IF.wide, sort: '', dir: '', quick: '' }; go('invoices'); };
 ACT.invQuick = (k) => {
@@ -3502,6 +3533,13 @@ async function loadInvoices() {
   const box = $('if-tbl'); if (!box) return;
   try {
     const d = await api('/invoice-register?' + qs);
+    // An invoice just updated here that no longer matches the filters stays on top, marked "updated".
+    const missing = [...INV_KEEP].filter((id) => !d.data.some((x) => x.id === id));
+    if (missing.length) {
+      const k = await api('/invoice-register?ids=' + missing.join(',')).catch(() => ({ data: [] }));
+      d.data = [...k.data.map((x) => ({ ...x, kept: true })), ...d.data];
+    }
+    renderInvActive(qs);
     const t = d.totals;
     $('if-count').innerHTML = `<b>${t.count}</b> invoice${t.count === 1 ? '' : 's'}`;
     $('if-tot').innerHTML = `<div class="totbar"><span>Total <b>${money(t.total)}</b></span><span>Received <b class="good">${money(t.received)}</b></span>
@@ -3546,7 +3584,7 @@ async function loadInvoices() {
         <td class="num"><b class="${i.pending > 0 ? 'bad' : ''}">${f2(i.pending)}</b></td>
         ${wide ? `<td class="num">${f2(i.vatOnPending)}</td><td class="num">${f2(i.netPending)}</td>
           <td class="num">${i.installments.total}</td><td class="num">${i.installments.paid}</td><td class="num">${i.installments.pending}</td>` : ''}
-        <td>${dmy(i.issueDate)}</td><td>${i.overdue ? '<span class="pill p-bad">Overdue</span>' : statusPill(i.status)}</td>
+        <td>${dmy(i.issueDate)}</td><td>${invStatusPill(i)}${i.overdue ? ' <span class="pill p-bad">Overdue</span>' : ''}${INV_KEEP.has(i.id) && i.kept ? ' <span class="pill p-info" title="Updated just now; it no longer matches the filters above and stays here until you search again">updated</span>' : ''}</td>
         <td>${dmy(i.lastPaymentAt)}</td><td>${esc(i.methods.join(', ') || '—')}</td><td>${i.additional ? 'Yes' : i.custom ? 'Custom' : 'No'}</td>
         <td>${i.emailedAt ? dmy(i.emailedAt) : '<span class="mini">—</span>'}</td></tr>`).join('')}</tbody></table>
       <div class="pager"><span>Page ${d.meta.page} of ${d.meta.pages}</span><span>
@@ -3676,7 +3714,7 @@ window.showInvoice = async (id) => {
       </div>
       <dl class="kv" style="margin-top:12px">
         <dt>Parent</dt><dd>${esc(i.guardian?.fullName || '—')} <span class="ref">${esc(i.guardian?.reference || '')}</span><div class="mini">${esc(i.guardian?.email || '')}</div></dd>
-        <dt>Status</dt><dd>${statusPill(i.status)}</dd>
+        <dt>Status</dt><dd>${invStatusPill(i)}</dd>
         <dt>Issued</dt><dd>${dt(i.issueDate)}</dd><dt>Due</dt><dd>${dt(i.dueDate)}</dd>
         <dt>Emailed</dt><dd>${mine.length ? mine.map((e) => `${dtm(e.at)} <span class="mini">${e.simulated ? 'recorded (email not connected)' : e.status === 'FAILED' ? 'failed' : 'sent to ' + esc(e.to)}</span>`).join('<br>') : '<span class="mini">not yet</span>'}</dd>
       </dl>
@@ -3740,7 +3778,7 @@ window.recordPayment = async (id) => {
   try {
     const r = await api(`/invoices/${id}/payments`, { method: 'POST', body: JSON.stringify(body) });
     toast('Payment recorded — ' + String(r.invoice.status).replace('_', ' ').toLowerCase());
-    window.showInvoice(id); if (CURRENT === 'invoices') loadInvoices(); if (CURRENT === 'paymentReport') loadPaymentReport();
+    window.showInvoice(id); invKeep(id); if (CURRENT === 'paymentReport') loadPaymentReport();
   } catch (e) { $('pay-err').innerHTML = `<div class="note bad">${esc(e.message)}</div>`; }
 };
 const cnDone = (what, r) => toast(r?.creditNote ? `${what} — credit note ${r.creditNote.number} issued` : what);
@@ -3749,7 +3787,7 @@ ACT.invWriteOff = async (id) => {
   if (!(amount > 0) || reason.length < 3) return toast('Write-off needs an amount and a reason');
   try {
     const r = await api(`/invoices/${id}/write-off`, { method: 'POST', body: JSON.stringify({ amount, reason, creditNote: $('wo-cn')?.checked || undefined }) });
-    cnDone('Written off', r); window.showInvoice(id); if (CURRENT === 'invoices') loadInvoices();
+    cnDone('Written off', r); window.showInvoice(id); invKeep(id);
   } catch (e) { toast(e.message); }
 };
 ACT.invRefund = async (id) => {
@@ -3757,12 +3795,12 @@ ACT.invRefund = async (id) => {
   if (!(amount > 0) || reason.length < 3) return toast('A refund needs an amount and a reason');
   try {
     const r = await api(`/invoices/${id}/refund`, { method: 'POST', body: JSON.stringify({ amount, reason, toWallet: $('rf-wal').checked || undefined }) });
-    cnDone('Refund recorded', r); window.showInvoice(id); if (CURRENT === 'invoices') loadInvoices();
+    cnDone('Refund recorded', r); window.showInvoice(id); invKeep(id);
   } catch (e) { toast(e.message); }
 };
 ACT.invCancel = async (id, sure) => {
   if (!sure) { $('cx-box').innerHTML = `<button class="btn sm" data-act="invCancel" data-a1="${id}" data-a2="yes">Yes, cancel this invoice</button> <a class="lnk2" data-act="showInvoice" data-a1="${id}">Keep it</a>`; return; }
-  try { const r = await api(`/invoices/${id}/cancel`, { method: 'POST', body: '{}' }); cnDone('Invoice cancelled', r); window.showInvoice(id); if (CURRENT === 'invoices') loadInvoices(); }
+  try { const r = await api(`/invoices/${id}/cancel`, { method: 'POST', body: '{}' }); cnDone('Invoice cancelled', r); window.showInvoice(id); invKeep(id); }
   catch (e) { toast(e.message); }
 };
 

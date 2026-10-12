@@ -5,6 +5,7 @@ import { DataSource } from 'typeorm';
 import { PaymentMethod } from '../../database/entities';
 import { PACKAGE_LABEL } from './pricing';
 import { dubaiToday } from '../../common/dubai-date';
+import { invoiceStatusLabel } from './payment-state';
 
 const money = (n: number) => Math.round(n * 100) / 100;
 
@@ -308,6 +309,7 @@ export class FinanceReportsService {
       const paidPayments = r.paymentsCount ?? 0;
       return {
         id: r.id, number: r.number, type: r.type, status: r.status,
+        statusLabel: invoiceStatusLabel(r.status, plans.get(r.id) ?? null),
         overdue: ['ISSUED', 'PART_PAID'].includes(r.status) && !!r.dueDate && r.dueDate < dubaiToday(),
         issueDate: r.issueDate, dueDate: r.dueDate,
         parent: { id: r.guardianId, ref: r.parentRef, name: r.parentName, email: r.email, mobile: r.mobile },

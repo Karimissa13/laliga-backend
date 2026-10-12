@@ -38,6 +38,27 @@ const FROM_INVOICE: Record<InvoiceStatus, PaymentState> = {
   [InvoiceStatus.CANCELLED]: PaymentState.NO_INVOICE,
 };
 
+/**
+ * An invoice's payment status in words (Karim, Oct 2026): "Invoice issued" until
+ * money arrives, then "Partial payment" — or, on an instalment plan, "Instalment 2
+ * of 3 paid" (instalments are paid in order) — and "Paid" once settled.
+ */
+export function invoiceStatusLabel(status?: InvoiceStatus | string | null, plan?: { total: number; paid: number } | null): string {
+  switch (status) {
+    case InvoiceStatus.DRAFT: return 'Draft (not sent)';
+    case InvoiceStatus.ISSUED: return 'Invoice issued';
+    case InvoiceStatus.PART_PAID:
+      return plan && plan.total > 1 && plan.paid >= 1 && plan.paid < plan.total
+        ? `Instalment ${plan.paid} of ${plan.total} paid` : 'Partial payment';
+    case InvoiceStatus.PAID: return 'Paid';
+    case InvoiceStatus.SPONSORED: return 'Sponsored';
+    case InvoiceStatus.REFUNDED: return 'Refunded';
+    case InvoiceStatus.WRITTEN_OFF: return 'Written off';
+    case InvoiceStatus.CANCELLED: return 'Cancelled';
+    default: return status ? String(status) : '—';
+  }
+}
+
 /** Invoice statuses on which money is still owed — the ones that can be overdue. */
 const OPEN: InvoiceStatus[] = [InvoiceStatus.ISSUED, InvoiceStatus.PART_PAID];
 

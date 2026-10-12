@@ -6,6 +6,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Fee, InvoiceStatus, PaymentLink } from '../../database/entities';
 import { InstalmentsService } from './instalments.service';
+import { invoiceStatusLabel } from './payment-state';
 import { InvoicesService } from './invoices.service';
 import { PaymentsService } from './payments.service';
 import { DiscountEngine } from './discount-engine.service';
@@ -139,7 +140,11 @@ export class FinanceController {
   preview(@Query('enrolmentId') enrolmentId: string) { return this.invoices.preview(enrolmentId); }
 
   @Get('invoices/:id') @RequirePermissions('invoice.view')
-  getInvoice(@Param('id') id: string) { return this.invoices.findOne(id); }
+  async getInvoice(@Param('id') id: string) {
+    const inv = await this.invoices.findOne(id);
+    const plan = (await this.instalments.countsFor([id])).get(id) ?? null;
+    return { ...inv, statusLabel: invoiceStatusLabel(inv.status, plan) };
+  }
 
   @Post('invoices/generate') @RequirePermissions('invoice.create') @Audit('invoice.generate', 'invoice')
   @ApiOperation({ summary: 'Generate an invoice from enrolments — prices + VAT + auto discounts' })

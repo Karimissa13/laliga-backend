@@ -1,6 +1,6 @@
 import { InvoiceStatus } from '../../database/entities/enums';
 import {
-  PaymentState, isOverdue, overdueSql, paymentStateOf, paymentStateSql,
+  PaymentState, invoiceStatusLabel, isOverdue, overdueSql, paymentStateOf, paymentStateSql,
 } from './payment-state';
 
 describe('payment state', () => {
@@ -32,5 +32,23 @@ describe('payment state', () => {
     // A settled invoice must never count as overdue.
     expect(overdueSql('inv')).not.toContain(`'PAID'`);
     expect(overdueSql('inv')).not.toContain(`'SPONSORED'`);
+  });
+});
+
+describe('invoiceStatusLabel — the payment status in words (Oct 2026)', () => {
+  it('says "Invoice issued" until money arrives, with or without instalments', () => {
+    expect(invoiceStatusLabel('ISSUED', null)).toBe('Invoice issued');
+    expect(invoiceStatusLabel('ISSUED', { total: 3, paid: 0 })).toBe('Invoice issued');
+  });
+  it('counts instalments paid in order on a plan, else "Partial payment"', () => {
+    expect(invoiceStatusLabel('PART_PAID', null)).toBe('Partial payment');
+    expect(invoiceStatusLabel('PART_PAID', { total: 3, paid: 0 })).toBe('Partial payment');   // part of instalment 1
+    expect(invoiceStatusLabel('PART_PAID', { total: 3, paid: 1 })).toBe('Instalment 1 of 3 paid');
+    expect(invoiceStatusLabel('PART_PAID', { total: 5, paid: 4 })).toBe('Instalment 4 of 5 paid');
+  });
+  it('names the settled and closed states', () => {
+    expect(invoiceStatusLabel('PAID', { total: 3, paid: 3 })).toBe('Paid');
+    expect(invoiceStatusLabel('DRAFT')).toBe('Draft (not sent)');
+    expect(invoiceStatusLabel('CANCELLED')).toBe('Cancelled');
   });
 });

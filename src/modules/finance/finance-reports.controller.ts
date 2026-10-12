@@ -176,7 +176,7 @@ export class FinanceReportsController {
         f2(i.totalInclVat), f2(i.totalExclVat), f2(i.vat), f2(i.discount), f2(i.refunded), i.refundReason,
         f2(i.writeOff), i.writeOffReason, f2(i.received), f2(i.vatOnReceived), f2(i.netReceived), f2(i.wallet),
         f2(i.pending), f2(i.vatOnPending), f2(i.netPending), i.installments.total, i.installments.paid, i.installments.pending,
-        dmy(i.issueDate), dmy(i.dueDate), i.overdue ? 'OVERDUE' : i.status, dmy(i.lastPaymentAt), i.methods.join(', '),
+        dmy(i.issueDate), dmy(i.dueDate), i.statusLabel + (i.overdue ? ' (overdue)' : ''), dmy(i.lastPaymentAt), i.methods.join(', '),
         i.additional ? 'Yes' : 'No', i.emailedAt ? dmy(i.emailedAt) : '']));
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="Invoices.csv"');

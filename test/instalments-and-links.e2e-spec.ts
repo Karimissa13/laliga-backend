@@ -66,6 +66,7 @@ describe('Instalments and payment links (e2e)', () => {
     expect(s.next.seq).toBe(1);
     const reg = (await request(http).get(`/api/v1/invoice-register?invoiceNo=${inv.number.replace('LA-', '')}`).set(auth())).body.data[0];
     expect(reg.installments).toEqual({ total: 3, paid: 0, pending: 3 });
+    expect(reg.statusLabel).toBe('Invoice issued');
   });
 
   it('allocates payments: tagged to an instalment first, then in order', async () => {
@@ -78,6 +79,12 @@ describe('Instalments and payment links (e2e)', () => {
     expect(s.instalments[1]).toMatchObject({ state: 'PART_PAID', paid: 100 });
     expect(s.instalments[1].remaining).toBeCloseTo(b.amount - 100, 2);
     expect(s.counts).toEqual({ total: 3, paid: 1, pending: 2 });
+    // The list and the invoice page both say which instalment is paid; the invoice stays in the unfiltered list.
+    const reg = (await request(http).get(`/api/v1/invoice-register?invoiceNo=${inv.number.replace('LA-', '')}`).set(auth())).body.data[0];
+    expect(reg.statusLabel).toBe('Instalment 1 of 3 paid');
+    expect((await request(http).get(`/api/v1/invoices/${inv.id}`).set(auth())).body.statusLabel).toBe('Instalment 1 of 3 paid');
+    const all = (await request(http).get(`/api/v1/invoice-register?keyword=${inv.number}`).set(auth())).body.data.map((x: any) => x.id);
+    expect(all).toContain(inv.id);
   });
 
   it('changes the plan but never below what an instalment has received', async () => {
