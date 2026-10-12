@@ -110,6 +110,11 @@ export class Payment {
   @Column({ nullable: true }) notes?: string;
   /** Which instalment this payment was taken for (1–5), when the invoice has a plan. */
   @Column({ type: 'int', nullable: true }) instalmentSeq?: number | null;
+  /**
+   * Set on a payment that undoes an earlier one (a wallet payment taken back to the wallet):
+   * it un-pays the invoice — unlike a refund, which comes with a credit note.
+   */
+  @Column({ type: 'uuid', nullable: true }) reversalOfId?: string | null;
   @CreateDateColumn() createdAt: Date;
 }
 
@@ -258,6 +263,23 @@ export class WalletTransaction {
   @Column({ type: 'enum', enum: WalletTxnType }) type: WalletTxnType;
   @Column(dec) amount: string;
   @Column({ nullable: true }) reason?: string;
+  /**
+   * Where the money came from or went (Oct 2026): REFUND, OVERPAYMENT, SIBLING, CREDIT (another
+   * reason, e.g. goodwill), DEBIT (manual), INVOICE_PAYMENT (used on an invoice), CANCELLATION
+   * (a credit taken back), PAYMENT_REVERSAL (a wallet payment undone — money back in the wallet).
+   */
+  @Column({ type: 'varchar', length: 20, nullable: true }) kind?: string | null;
+  /** The invoice it relates to (refunded, overpaid or paid with wallet money). */
+  @Index() @Column({ type: 'uuid', nullable: true }) invoiceId?: string | null;
+  /** The invoice payment it created or came from. */
+  @Column({ type: 'uuid', nullable: true }) paymentId?: string | null;
+  @Column({ type: 'uuid', nullable: true }) createdById?: string | null;
+  /** On a cancelling / reversing entry: the entry it undoes. */
+  @Column({ type: 'uuid', nullable: true }) reversalOfId?: string | null;
+  /** Set on an entry that was cancelled or reversed (the entry itself is never deleted). */
+  @Column({ type: 'timestamp', nullable: true }) cancelledAt?: Date | null;
+  @Column({ type: 'uuid', nullable: true }) cancelledById?: string | null;
+  @Column({ type: 'varchar', length: 250, nullable: true }) cancelReason?: string | null;
   @CreateDateColumn() createdAt: Date;
 }
 

@@ -414,3 +414,26 @@ Karim (12 Oct), after comparing with the old admin's wallet page (Parents → Wa
 - [x] **Fixed: a refund re-opened the invoice.** Every refund issues a tax credit note, which reduces what the family was charged, but the balance formula added refunds back. A refund of a paid invoice turned it into "Partial payment", owing the refunded amount (and it would have been sent reminders). The same happened with a move-down credit to the wallet. Now owed = total − paid − written off everywhere (19 places: lists, reports, dashboard, reminders, parent portal, PDFs…). The invoice status uses the same rule, and instalments ignore refunds. Money collected is still net of refunds.
 - [x] Not carried over from the old page: the "document" upload (no file storage yet) and the "status" (used / not used), which the new statement shows as debit/credit entries.
 - [x] **Tests:** 121 unit + 155 e2e (refund into the wallet keeps the invoice's status and balance, reason required on a credit, no debit below zero).
+
+## ✅ Completed — Paying invoices with wallet credit; cancel / take back — 13 Oct 2026
+
+Karim (12 Oct): a family with wallet credit can pay any invoice with it (season package, camp, trip, league…); the wallet ledger shows where the credit went (date, invoice, what for); amounts in the wallet can be cancelled.
+
+- [x] **Pay with wallet credit:**
+  - From an invoice: a "Pay with wallet credit" box shows the family's balance, with an instalment choice on a plan.
+  - From the family wallet page: "Pay an invoice" lists the family's invoices that owe money, with what each is for and how much it owes.
+  - One database transaction: the wallet goes down (never below zero), a Wallet payment is recorded on the invoice, and the wallet entry is linked to both.
+  - Never more than the invoice owes. The invoice is locked during the payment, so two payments at the same moment can't overpay it (tested).
+- [x] **Fixed:** "Record a payment" with the Wallet method used to record the payment without taking the money out of the wallet (it could be spent twice). It now goes through the wallet.
+- [x] **Where the credit went:** each wallet entry now records how it came about:
+  - refund into wallet; overpayment; sibling discount credit; credit for another reason; manual debit;
+  - used to pay an invoice; cancellation; wallet payment taken back.
+  - Each entry also records its invoice, its payment and who did it. The statement and the Wallet ledger show "What for" (e.g. *Used to pay an invoice · LA-000014 — Full season*), with a "Show" filter (used to pay invoices / credits added / cancelled) and the same columns in the Excel export.
+- [x] **Cancel, never delete** (records rule):
+  - A credit for another reason → taken back out, if still in the wallet.
+  - A manual debit → put back.
+  - A wallet payment on an invoice → "Take back": the money returns to the wallet and the invoice owes it again (a reversing payment, no credit note); the instalment re-opens.
+  - Both entries stay on the statement; the cancelled one is struck through, with who, when and why.
+  - Refund, overpayment and sibling credits come from an invoice and are corrected there.
+- [x] Migration `WalletLinks1791834164432` (additive, nullable): wallet entries get kind / invoice / payment / author / cancellation; payments get `reversalOfId`. Existing entries are labelled from their wording; live has one (a test credit of AED 123,345 "retunred", which can now be cancelled).
+- [x] **Tests:** 122 unit + 166 e2e (new `wallet.e2e-spec.ts`: trip, league and instalment paid from the wallet; over-wallet, over-owed and paid-invoice refusals; concurrent payments; the Wallet method; take back; cancel; refund credit protected; coach refused).

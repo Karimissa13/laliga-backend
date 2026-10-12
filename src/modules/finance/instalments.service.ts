@@ -32,7 +32,9 @@ export class InstalmentsService {
   }
   /** Money paid towards the plan. Refunds are left out: each comes with a credit note, so it never re-opens an instalment. */
   private ledger(pays: Payment[]): LedgerPayment[] {
-    return pays.filter((p) => p.status === PaymentStatus.COMPLETED && p.direction !== 'REFUND')
+    // A wallet payment that was taken back counts for nothing (it and its reversal both drop out).
+    const reversed = new Set(pays.filter((p) => p.reversalOfId).map((p) => p.reversalOfId));
+    return pays.filter((p) => p.status === PaymentStatus.COMPLETED && p.direction !== 'REFUND' && !reversed.has(p.id))
       .sort((a, b) => new Date(a.paidAt).getTime() - new Date(b.paidAt).getTime())
       .map((p) => ({ amount: Number(p.amount), direction: p.direction as any, instalmentSeq: p.instalmentSeq ?? null }));
   }

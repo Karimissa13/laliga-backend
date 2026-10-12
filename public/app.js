@@ -1589,14 +1589,14 @@ async function fwRender() {
   openDrawer(`Wallet — ${FW.name}`, `
     <div class="fwban"><div><div class="fwk">Wallet balance</div><div class="fwn">${money(w.balance)}</div>
         <div class="mini">${esc(FW.name)}${ref ? ' · <span class="ref">' + esc(ref) + '</span>' : ''} · credit ${money(s.totals.credits)} · used ${money(s.totals.debits)}</div></div>
-      ${canRefund || canCredit ? `<button class="btn" data-act="fwAdd" data-a1="${canRefund ? 'refund' : 'credit'}">+ Add to wallet</button>` : ''}</div>
+      <span style="display:flex;gap:8px;flex-wrap:wrap">${Number(w.balance) > 0.005 && can('payment.create') && can('invoice.view') ? `<button class="btn ghost" data-act="fwAdd" data-a1="pay">Pay an invoice</button>` : ''}
+      ${canRefund || canCredit ? `<button class="btn" data-act="fwAdd" data-a1="${canRefund ? 'refund' : 'credit'}">+ Add to wallet</button>` : ''}</span></div>
     <div id="fw-add">${FW.add ? '' : ''}</div>
     <h3 class="dh3">Statement</h3>
-    <div class="tblwrap"><table class="fwtbl"><thead><tr><th>#</th><th>Date / time</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th><th>Remarks</th><th>Invoice</th></tr></thead>
-      <tbody>${rows.map((t, i) => `<tr><td class="mini">${rows.length - i}</td><td>${dtm(t.at)}</td>
+    <div class="tblwrap"><table class="fwtbl"><thead><tr><th>#</th><th>Date / time</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th><th>What for</th><th></th></tr></thead>
+      <tbody>${rows.map((t, i) => `<tr class="${t.cancelledAt ? 'wcx' : ''}"><td class="mini">${rows.length - i}</td><td>${dtm(t.at)}</td>
         <td class="num">${t.type === 'DEBIT' ? money(t.amount) : ''}</td><td class="num good">${t.type === 'CREDIT' ? money(t.amount) : ''}</td>
-        <td class="num"><b>${money(t.balanceAfter)}</b></td><td class="cm" title="${esc(t.reason || '')}">${esc(t.reason || '—')}</td>
-        <td>${t.invoiceId ? `<a class="lnk ref" data-act="showInvoice" data-a1="${t.invoiceId}">${esc(t.invoiceNumber)}</a>` : '—'}</td></tr>`).join('')
+        <td class="num"><b>${money(t.balanceAfter)}</b></td><td>${wFor(t)}</td><td>${wAct(t)}</td></tr>`).join('')
         || '<tr><td colspan="7" class="empty">No wallet entries yet.</td></tr>'}</tbody></table></div>`, true);
   if (FW.add) fwAddForm();
 }
@@ -1604,6 +1604,7 @@ ACT.fwAdd = async (kind) => { FW.add = kind; await fwAddForm(); };
 async function fwAddForm() {
   const box = $('fw-add'); if (!box) return;
   const canRefund = can('refund.create') && can('invoice.view'), canCredit = can('wallet.manage');
+  if (FW.add === 'pay') return fwPayForm();
   if (FW.add === 'refund' && !FW.refundable) FW.refundable = await api(`/guardians/${FW.id}/wallet/refundable`).catch(() => []);
   const inv = FW.refundable || [];
   const type = `<div class="seg fwseg">${canRefund ? `<button class="${FW.add === 'refund' ? 'on' : ''}" data-act="fwAdd" data-a1="refund">Refund a paid invoice</button>` : ''}
@@ -1625,6 +1626,50 @@ async function fwAddForm() {
   if (sel) sel.addEventListener('change', () => { const i = inv.find((x) => x.id === sel.value); const a = $('fw-amt'); if (i && a) { a.max = i.refundable; a.placeholder = 'up to ' + i.refundable.toFixed(2); } });
 }
 ACT.fwCancel = () => { FW.add = null; $('fw-add').innerHTML = ''; };
+/** Wallet page → "Pay an invoice": pick one of the family's open invoices (season, camp, trip, league…). */
+async function fwPayForm() {
+  const box = $('fw-add'); if (!box) return;
+  const [w, list] = await Promise.all([api(`/guardians/${FW.id}/wallet`), api(`/guardians/${FW.id}/wallet/payable`).catch(() => [])]);
+  const have = Number(w.balance);
+  FW.payable = list;
+  box.innerHTML = `<div class="card fwadd"><div class="fwaddh"><b>Pay an invoice with wallet credit</b><span class="mini">Available <b>${money(have)}</b></span></div>
+    ${list.length ? `<div class="frm">
+      <div class="full"><label class="lbl" for="fp-inv">Invoice</label><select class="sel" id="fp-inv">${list.map((x) =>
+        opt(x.id, `${x.number} · ${x.purpose}${x.children ? ' · ' + x.children : ''} · owes ${money(x.owed)}${x.dueDate ? ' · due ' + dmy(x.dueDate) : ''}`)).join('')}</select></div>
+      <div id="fp-instwrap"></div>
+      <div><label class="lbl" for="fp-amt">Amount from the wallet (AED)</label><input class="in" id="fp-amt" type="number" step="0.01" min="0.01"></div></div>`
+      : '<div class="mini">This family has no invoice with money owed.</div>'}
+    <div id="fw-err" style="margin-top:8px"></div>
+    <div class="row-end"><button class="btn ghost" data-act="fwCancel">Cancel</button>${list.length ? '<button class="btn" id="fw-go" data-act="fwPay">Pay from the wallet</button>' : ''}</div></div>`;
+  const sel = $('fp-inv'); if (!sel) return;
+  const pick = async () => {
+    const x = list.find((y) => y.id === sel.value); if (!x) return;
+    let due = x.owed; const wrap = $('fp-instwrap'); wrap.innerHTML = '';
+    if (x.hasPlan) {
+      const plan = await api(`/invoices/${x.id}/instalments`).catch(() => null);
+      const left = (plan?.instalments || []).filter((v) => v.remaining > 0.005);
+      if (left.length) {
+        wrap.innerHTML = `<label class="lbl" for="fp-inst">For instalment</label><select class="sel" id="fp-inst">${left.map((v) => opt(String(v.seq), `Instalment ${v.seq} — ${money(v.remaining)} left · due ${dmy(v.dueDate)}`)).join('')}</select>`;
+        due = left[0].remaining;
+        $('fp-inst').addEventListener('change', (e) => { const v = left.find((y) => String(y.seq) === e.target.value); if (v) $('fp-amt').value = Math.min(have, v.remaining).toFixed(2); });
+      }
+    }
+    $('fp-amt').value = Math.min(have, due).toFixed(2); $('fp-amt').max = Math.min(have, x.owed).toFixed(2);
+  };
+  sel.addEventListener('change', pick); pick();
+}
+ACT.fwPay = async () => {
+  const id = $('fp-inv').value, x = (FW.payable || []).find((y) => y.id === id), amount = Number($('fp-amt').value), err = $('fw-err');
+  const seq = $('fp-inst')?.value ? Number($('fp-inst').value) : undefined;
+  if (!x || !(amount > 0)) { err.innerHTML = '<div class="note bad">Choose an invoice and an amount.</div>'; return; }
+  if (!confirm(`Pay ${money(amount)} of ${x.number} (${x.purpose}) from ${FW.name}'s wallet?`)) return;
+  const go = $('fw-go'); go.disabled = true;
+  try {
+    const r = await api(`/invoices/${id}/pay-from-wallet`, { method: 'POST', body: JSON.stringify({ amount, instalmentSeq: seq }) });
+    toast(`${x.number} paid ${money(amount)} from the wallet — ${r.invoice.statusLabel || r.invoice.status}`);
+    FW.add = null; await fwRender(); if (CURRENT === 'walletReport') loadWalletLedger();
+  } catch (e) { err.innerHTML = `<div class="note bad">${esc(e.message)}</div>`; go.disabled = false; }
+};
 ACT.fwSave = async () => {
   const amount = Number($('fw-amt')?.value), reason = ($('fw-rsn')?.value || '').trim(), err = $('fw-err');
   if (!(amount > 0)) { err.innerHTML = '<div class="note bad">Enter an amount.</div>'; return; }
@@ -3417,6 +3462,7 @@ VIEWS.walletReport = async () => {
       <div><label class="lbl" for="wr-from">From</label><input class="in" type="date" id="wr-from" value="${esc(WRF.from)}"></div>
       <div><label class="lbl" for="wr-to">To</label><input class="in" type="date" id="wr-to" value="${esc(WRF.to)}"></div>
       <div><label class="lbl" for="wr-type">Type</label><select class="sel" id="wr-type">${opt('', 'Credits and debits', !WRF.type)}${opt('CREDIT', 'Credits (money in)', WRF.type === 'CREDIT')}${opt('DEBIT', 'Debits (used / paid out)', WRF.type === 'DEBIT')}</select></div>
+      <div><label class="lbl" for="wr-kind">Show</label><select class="sel" id="wr-kind">${opt('', 'Everything', !WRF.kind)}${opt('used', 'Used to pay invoices', WRF.kind === 'used')}${opt('added', 'Credits added', WRF.kind === 'added')}${opt('cancelled', 'Cancelled / taken back', WRF.kind === 'cancelled')}</select></div>
       <div><label class="lbl" for="wr-loc">Location</label><select class="sel" id="wr-loc">${opt('', 'All locations')}${LK.locations.map((l) => opt(l.id, shortLoc(l.name), WRF.locationId === l.id)).join('')}</select></div>
       <div class="w2"><label class="lbl" for="wr-q">Search</label><input class="in" id="wr-q" value="${esc(WRF.search)}" placeholder="Family name, PR-, mobile or reason (e.g. LA-000123)"></div>
     </div>
@@ -3424,14 +3470,14 @@ VIEWS.walletReport = async () => {
     <div id="wr-tot"></div>
     <div class="card tblwrap" id="wr-tbl"><div class="loading">Loading…</div></div>`;
   $('view').querySelectorAll('.filters input').forEach((i) => i.addEventListener('keydown', (e) => { if (e.key === 'Enter') ACT.wrSearch(); }));
-  ['wr-from', 'wr-to', 'wr-type', 'wr-loc'].forEach((id) => $(id).addEventListener('change', () => ACT.wrSearch()));
+  ['wr-from', 'wr-to', 'wr-type', 'wr-kind', 'wr-loc'].forEach((id) => $(id).addEventListener('change', () => ACT.wrSearch()));
   await loadWalletLedger();
 };
 function wrQs() {
   const el = (id) => $(id);
-  if (el('wr-from')) Object.assign(WRF, { from: el('wr-from').value, to: el('wr-to').value, type: el('wr-type').value, locationId: el('wr-loc').value, search: el('wr-q').value.trim() });
+  if (el('wr-from')) Object.assign(WRF, { from: el('wr-from').value, to: el('wr-to').value, type: el('wr-type').value, kind: el('wr-kind').value, locationId: el('wr-loc').value, search: el('wr-q').value.trim() });
   const qs = new URLSearchParams();
-  for (const [k, v] of Object.entries({ from: WRF.from, to: WRF.to, type: WRF.type, locationId: WRF.locationId, search: WRF.search })) if (v) qs.set(k, v);
+  for (const [k, v] of Object.entries({ from: WRF.from, to: WRF.to, type: WRF.type, kind: WRF.kind, locationId: WRF.locationId, search: WRF.search })) if (v) qs.set(k, v);
   return qs;
 }
 ACT.wrSearch = () => { WRF.page = 1; loadWalletLedger(); };
@@ -3448,14 +3494,13 @@ async function loadWalletLedger() {
       <span>Credits <b class="good">${money(t.credits)}</b></span><span>Debits <b>${money(t.debits)}</b></span><span>Net <b>${money(t.net)}</b></span></div>`;
     const pages = Math.max(1, Math.ceil(t.count / d.limit));
     box.innerHTML = `<table id="wr-table" class="dir"><thead><tr><th data-col="d">Date</th><th data-col="p">Family</th><th data-col="t">Type</th>
-      <th data-col="a" class="num">Amount</th><th data-col="b" class="num">Balance after</th><th data-col="r">Reason</th><th data-col="i">Invoice</th><th data-col="w" class="num">Wallet today</th></tr></thead>
-      <tbody>${d.data.map((r) => `<tr><td>${dmy(r.date)}</td>
+      <th data-col="a" class="num">Amount</th><th data-col="b" class="num">Balance after</th><th data-col="r">What for</th><th data-col="w" class="num">Wallet today</th><th data-col="x"></th></tr></thead>
+      <tbody>${d.data.map((r) => `<tr class="${r.cancelledAt ? 'wcx' : ''}"><td>${dmy(r.date)}</td>
         <td><a class="lnk" data-act="showWallet" data-a1="${r.guardianId}" data-a2="${esc(r.parent)}">${esc(r.parent)}</a><div class="mini ref">${esc(r.parentRef)}</div></td>
         <td>${r.type === 'CREDIT' ? '<span class="pill p-good">Credit</span>' : '<span class="pill p-warn">Debit</span>'}</td>
         <td class="num"><b class="${r.type === 'CREDIT' ? 'good' : ''}">${r.type === 'CREDIT' ? '+' : '−'}${money(r.amount)}</b></td>
-        <td class="num">${money(r.balanceAfter)}</td><td class="cm" title="${esc(r.reason || '')}">${esc(r.reason || '—')}</td>
-        <td>${r.invoiceId ? `<a class="lnk ref" data-act="showInvoice" data-a1="${r.invoiceId}">${esc(r.invoiceNumber)}</a>` : '—'}</td>
-        <td class="num">${money(r.walletBalance)}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">No wallet entries match.</td></tr>'}</tbody></table>
+        <td class="num">${money(r.balanceAfter)}</td><td>${wFor(r)}</td>
+        <td class="num">${money(r.walletBalance)}</td><td>${wAct(r)}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">No wallet entries match.</td></tr>'}</tbody></table>
       ${pages > 1 ? `<div class="fbar"><button class="btn sm ghost" data-act="wrPage" data-a1="${WRF.page - 1}" ${WRF.page <= 1 ? 'disabled' : ''}>‹ Previous</button>
         <span class="mini">Page ${WRF.page} of ${pages}</span><button class="btn sm ghost" data-act="wrPage" data-a1="${WRF.page + 1}" ${WRF.page >= pages ? 'disabled' : ''}>Next ›</button></div>` : ''}`;
     resizableTable($('wr-table'), 'wallet');
@@ -3917,8 +3962,12 @@ window.showInvoice = async (id) => {
       </div>
       <div id="inv-cn"></div>
       <h3 class="dh3">Payments</h3>
-      <table><tbody>${pays.map((p) => `<tr><td>${dmy(p.paidAt)}<div class="mini">${esc(METHOD_WORD[p.method] || p.method)}${p.merchantName ? ' · ' + esc(p.merchantName) + ' ' + esc(p.merchantNumber || '') : ''}${p.reference ? ' · ref ' + esc(p.reference) : ''}</div></td>
-        <td>${p.direction === 'REFUND' ? '<span class="pill p-warn">refund</span>' : ''}</td><td class="num">${p.direction === 'REFUND' ? '−' : ''}${money(p.amount)}</td></tr>`).join('') || '<tr><td class="empty">No payments yet.</td></tr>'}</tbody></table>
+      <table><tbody>${pays.map((p) => { const back = pays.some((x) => x.reversalOfId === p.id);
+        return `<tr><td>${dmy(p.paidAt)}<div class="mini">${esc(METHOD_WORD[p.method] || p.method)}${p.merchantName ? ' · ' + esc(p.merchantName) + ' ' + esc(p.merchantNumber || '') : ''}${p.reference ? ' · ref ' + esc(p.reference) : ''}${p.reversalOfId ? ' · ' + esc(p.notes || '') : ''}</div></td>
+        <td>${p.reversalOfId ? '<span class="pill p-mute">taken back to wallet</span>' : p.direction === 'REFUND' ? '<span class="pill p-warn">refund</span>' : back ? '<span class="pill p-mute">taken back</span>'
+          : p.method === 'WALLET' && p.direction === 'INBOUND' && can('wallet.manage') && can('payment.create') && !['CANCELLED', 'REFUNDED'].includes(i.status) ? `<button class="btn sm ghost" data-act="invWalletBack" data-a1="${p.id}" data-a2="${i.id}" title="The money goes back to the wallet and the invoice owes it again">Take back to wallet</button>` : ''}</td>
+        <td class="num">${p.direction === 'REFUND' ? '−' : ''}${money(p.amount)}</td></tr>`; }).join('') || '<tr><td class="empty">No payments yet.</td></tr>'}</tbody></table>
+      <div id="inv-wal"></div>
       ${open && can('payment.create') ? `<h3 class="dh3">Record a payment</h3><div class="frm" id="pay-form">
         <div class="full" id="pay-instwrap" hidden><label class="lbl" for="pay-inst">For instalment</label><select class="sel" id="pay-inst"></select></div>
         <div><label class="lbl" for="pay-amt">Amount (AED)</label><input class="in" id="pay-amt" type="number" step="0.01" min="0.01" value="${bal.toFixed(2)}"></div>
@@ -3944,6 +3993,7 @@ window.showInvoice = async (id) => {
     loadInvTraining(i.id);
     loadInvPlan(i.id);
     loadInvCreditNotes(i.id);
+    if (open && can('payment.create') && can('wallet.view') && i.guardian?.id) loadInvWallet(i, bal);
     const ms = $('pay-merch');
     if (ms) {
       const merchants = await api('/merchants?activeOnly=true').catch(() => []);
@@ -3968,6 +4018,65 @@ window.recordPayment = async (id) => {
   } catch (e) { $('pay-err').innerHTML = `<div class="note bad">${esc(e.message)}</div>`; }
 };
 const cnDone = (what, r) => toast(r?.creditNote ? `${what} — credit note ${r.creditNote.number} issued` : what);
+// ---------- paying with wallet credit (Karim, 12 Oct) ----------
+// Any invoice — season package, camp, trip, league, kit — can be paid (in part or in full)
+// from the family's wallet credit; on a plan, for a chosen instalment.
+async function loadInvWallet(i, bal) {
+  const box = $('inv-wal'); if (!box) return;
+  try {
+    const [w, plan] = await Promise.all([api(`/guardians/${i.guardian.id}/wallet`), api(`/invoices/${i.id}/instalments`).catch(() => null)]);
+    const have = Number(w.balance);
+    if (!(have > 0.005)) { box.innerHTML = ''; return; }
+    const next = plan?.hasPlan ? plan.next : null;
+    const def = Math.min(have, next ? next.remaining : bal);
+    box.innerHTML = `<div class="card walpay"><div class="walhead"><b>Pay with wallet credit</b><span>Available <b>${money(have)}</b></span></div>
+      <div class="frm">
+        ${plan?.hasPlan ? `<div><label class="lbl" for="iw-inst">For instalment</label><select class="sel" id="iw-inst">${plan.instalments.filter((x) => x.remaining > 0.005).map((x) =>
+          opt(String(x.seq), `Instalment ${x.seq} — ${money(x.remaining)} left · due ${dmy(x.dueDate)}`, next && x.seq === next.seq)).join('')}</select></div>` : ''}
+        <div><label class="lbl" for="iw-amt">Amount from the wallet (AED)</label><input class="in" id="iw-amt" type="number" step="0.01" min="0.01" max="${Math.min(have, bal).toFixed(2)}" value="${def.toFixed(2)}"></div>
+      </div><div id="iw-err" style="margin-top:6px"></div>
+      <div class="row-end"><button class="btn" data-act="invPayWallet" data-a1="${i.id}">Pay from the wallet</button></div></div>`;
+    const sel = $('iw-inst');
+    if (sel) sel.addEventListener('change', () => { const x = plan.instalments.find((y) => String(y.seq) === sel.value); if (x) $('iw-amt').value = Math.min(have, x.remaining).toFixed(2); });
+  } catch { box.innerHTML = ''; }
+}
+ACT.invPayWallet = async (id) => {
+  const amount = Number($('iw-amt').value), seq = $('iw-inst')?.value ? Number($('iw-inst').value) : undefined;
+  if (!(amount > 0)) { $('iw-err').innerHTML = '<div class="note bad">Enter an amount.</div>'; return; }
+  if (!confirm(`Pay ${money(amount)} of this invoice from the family wallet?`)) return;
+  try {
+    const r = await api(`/invoices/${id}/pay-from-wallet`, { method: 'POST', body: JSON.stringify({ amount, instalmentSeq: seq }) });
+    toast(`Paid ${money(amount)} from the wallet — ${r.invoice.statusLabel || String(r.invoice.status).toLowerCase()}; ${money(r.wallet)} left in the wallet`);
+    window.showInvoice(id); invKeep(id);
+    if (CURRENT === 'walletReport') loadWalletLedger();
+  } catch (e) { $('iw-err').innerHTML = `<div class="note bad">${esc(e.message)}</div>`; }
+};
+/** Take a wallet payment back to the wallet (the invoice owes it again; no credit note). */
+ACT.invWalletBack = async (paymentId, invoiceId) => {
+  const reason = (prompt('Take this wallet payment back to the wallet? The invoice will owe it again.\n\nReason:') || '').trim();
+  if (!reason) return;
+  try {
+    const r = await api(`/payments/${paymentId}/reverse-wallet`, { method: 'POST', body: JSON.stringify({ reason }) });
+    toast(`Back in the wallet — wallet now ${money(r.wallet)}`); window.showInvoice(invoiceId); invKeep(invoiceId);
+  } catch (e) { toast(e.message); }
+};
+/** Cancel a wallet entry (a cancelling entry takes it back; both stay on the statement). */
+ACT.wCancel = async (entryId, what) => {
+  const reason = (prompt(`Cancel this wallet entry (${what || 'entry'})? It stays on the statement, marked cancelled, with a cancelling entry.\n\nReason:`) || '').trim();
+  if (!reason) return;
+  try {
+    const r = await api(`/wallet-entries/${entryId}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) });
+    toast(`Cancelled — wallet now ${money(r.wallet)}`);
+    if (FW && $('fw-add')) await fwRender();
+    if (CURRENT === 'walletReport') loadWalletLedger();
+  } catch (e) { toast(e.message); }
+};
+/** One statement / ledger row's "what for": how it came about, the invoice and what that invoice was for. */
+const wFor = (t) => `<div><b>${esc(t.kindLabel || '')}</b>${t.invoiceId ? ` · <a class="lnk ref" data-act="showInvoice" data-a1="${t.invoiceId}">${esc(t.invoiceNumber)}</a>${t.purpose ? ' — ' + esc(t.purpose) : ''}` : ''}</div>
+  <div class="mini" title="${esc(t.reason || '')}">${esc(t.reason || '')}${t.by ? ' · by ' + esc(t.by) : ''}</div>
+  ${t.cancelledAt ? `<div class="mini bad">Cancelled ${dtm(t.cancelledAt)}${t.cancelReason ? ' — ' + esc(t.cancelReason) : ''}</div>` : ''}`;
+const wAct = (t) => t.cancellable && can('wallet.manage') && (t.kind !== 'INVOICE_PAYMENT' || can('payment.create'))
+  ? `<button class="btn sm ghost" data-act="wCancel" data-a1="${t.id}" data-a2="${esc(t.kindLabel)} ${money(t.amount)}">${t.kind === 'INVOICE_PAYMENT' ? 'Take back' : 'Cancel'}</button>` : '';
 ACT.invWriteOff = async (id) => {
   const amount = Number($('wo-amt').value), reason = $('wo-rsn').value.trim();
   if (!(amount > 0) || reason.length < 3) return toast('Write-off needs an amount and a reason');

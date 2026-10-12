@@ -3,6 +3,13 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { RevenueStream } from '../../database/entities';
 import { LINE_PACKAGE_SQL } from '../finance/finance-reports.service';
+import { PURPOSE_LINES_SQL, TERM_TYPES_SQL, invoicePurpose } from '../finance/invoice-purpose';
+
+/** How each wallet entry came about, in words (statement and ledger). */
+const WALLET_KIND_WORD: Record<string, string> = {
+  REFUND: 'Refund into wallet', OVERPAYMENT: 'Overpayment', SIBLING: 'Sibling discount credit', CREDIT: 'Credit (another reason)',
+  DEBIT: 'Manual debit', INVOICE_PAYMENT: 'Used to pay an invoice', CANCELLATION: 'Cancellation', PAYMENT_REVERSAL: 'Wallet payment taken back',
+};
 
 /** The term options, in the order the payment card lists them; OTHER = everything that isn't a term fee. */
 const PACKAGE_ROWS = [
@@ -480,7 +487,7 @@ export class DashboardOverviewService {
    * The wallet ledger behind the "Wallet balance" card: every credit and debit on
    * every family wallet, with each family's balance after the entry.
    */
-  async walletLedger(q: { from?: string; to?: string; type?: string; search?: string; locationId?: string; guardianId?: string; page?: number; limit?: number }) {
+  async walletLedger(q: { from?: string; to?: string; type?: string; kind?: string; search?: string; locationId?: string; guardianId?: string; page?: number; limit?: number }) {
     const params: any[] = [];
     const p = (v: any) => { params.push(v); return `$${params.length}`; };
     const day = `(t."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Dubai')::date`;
@@ -489,9 +496,13 @@ export class DashboardOverviewService {
     if (q.to) w.push(`${day} <= ${p(q.to)}::date`);
     if (q.type) w.push(`t.type = ${p(q.type)}`);
     if (q.guardianId) w.push(`g.id = ${p(q.guardianId)}`);
+    // "used" = spent on invoices; "added" = credits in; "cancelled" = cancelled entries and their cancellations
+    if (q.kind === 'used') w.push(`t.kind = 'INVOICE_PAYMENT'`);
+    if (q.kind === 'added') w.push(`t.type = 'CREDIT' AND COALESCE(t.kind, '') NOT IN ('CANCELLATION', 'PAYMENT_REVERSAL')`);
+    if (q.kind === 'cancelled') w.push(`(t."cancelledAt" IS NOT NULL OR t.kind IN ('CANCELLATION', 'PAYMENT_REVERSAL'))`);
     if (q.search) {
       const s = p(`%${q.search.trim()}%`);
-      w.push(`(g."fullName" ILIKE ${s} OR g.reference ILIKE ${s} OR g.mobile ILIKE ${s} OR t.reason ILIKE ${s})`);
+      w.push(`(g."fullName" ILIKE ${s} OR g.reference ILIKE ${s} OR g.mobile ILIKE ${s} OR t.reason ILIKE ${s} OR iv.number ILIKE ${s})`);
     }
     const locScope = (alias: string) => `EXISTS (SELECT 1 FROM players px JOIN teams tx ON tx.id = px."currentTeamId"
       WHERE px."guardianId" = ${alias}."guardianId" AND tx."locationId" = ${p(q.locationId)})`;
@@ -502,12 +513,18 @@ export class DashboardOverviewService {
         SELECT t.*, sum(CASE WHEN t.type = 'CREDIT' THEN t.amount ELSE -t.amount END)
                  OVER (PARTITION BY t."walletId" ORDER BY t."createdAt", t.id) AS "balanceAfter"
         FROM wallet_transactions t)
-      SELECT %COLS% FROM t JOIN wallets wl ON wl.id = t."walletId" JOIN guardians g ON g.id = wl."guardianId" ${where}`;
+      SELECT %COLS% FROM t JOIN wallets wl ON wl.id = t."walletId" JOIN guardians g ON g.id = wl."guardianId"
+        LEFT JOIN invoices iv ON iv.id = COALESCE(t."invoiceId", (SELECT x.id FROM invoices x WHERE x.number = substring(t.reason from 'LA-[0-9]+') LIMIT 1))
+      ${where}`;
     const limit = Math.min(q.limit ?? 100, 100000), page = Math.max(1, q.page ?? 1);
     const rows: any[] = await this.ds.query(base.replace('%COLS%', `
         t.id, t."createdAt" AT TIME ZONE 'UTC' AS at, ${day}::text AS date, t.type, t.amount::float AS amount, t.reason,
         t."balanceAfter"::float AS "balanceAfter", g.id AS "guardianId", g.reference AS "parentRef", g."fullName" AS parent,
-        g.mobile, wl.balance::float AS "walletBalance", substring(t.reason from 'LA-[0-9]+') AS "invoiceNumber"`)
+        g.mobile, wl.balance::float AS "walletBalance", iv.id AS "invoiceId", iv.number AS "invoiceNumber", iv.purpose AS "invoicePurpose",
+        ${PURPOSE_LINES_SQL('iv')} AS "invoiceLines", ${TERM_TYPES_SQL('iv')} AS "termTypes",
+        COALESCE(t.kind, CASE WHEN t.type = 'CREDIT' THEN 'CREDIT' ELSE 'DEBIT' END) AS kind, t."paymentId", t."reversalOfId",
+        t."cancelledAt" AT TIME ZONE 'UTC' AS "cancelledAt", t."cancelReason",
+        (SELECT u."fullName" FROM users u WHERE u.id::text = t."createdById"::text) AS "by"`)
       + ` ORDER BY t."createdAt" DESC, t.id DESC LIMIT ${limit} OFFSET ${(page - 1) * limit}`, params);
     const [tot] = await this.ds.query(base.replace('%COLS%', `count(*)::int AS count,
         COALESCE(sum(t.amount) FILTER (WHERE t.type = 'CREDIT'), 0)::float AS credits,
@@ -520,11 +537,14 @@ export class DashboardOverviewService {
       WHERE px."guardianId" = wl."guardianId" AND tx."locationId" = $1)`); }
     const [bal] = await this.ds.query(`SELECT COALESCE(sum(wl.balance), 0)::float AS balance,
         count(*) FILTER (WHERE wl.balance > 0)::int AS "inCredit" FROM wallets wl ${bw.length ? 'WHERE ' + bw.join(' AND ') : ''}`, bp);
-    const ids = [...new Set(rows.filter((r) => r.invoiceNumber).map((r) => r.invoiceNumber))];
-    const inv: any[] = ids.length ? await this.ds.query(`SELECT id, number FROM invoices WHERE number = ANY($1)`, [ids]) : [];
-    const invId = new Map(inv.map((i) => [i.number, i.id]));
     return {
-      data: rows.map((r) => ({ ...r, invoiceId: r.invoiceNumber ? invId.get(r.invoiceNumber) ?? null : null })),
+      // Each entry: how it came about, and — for money used — what the invoice was for.
+      data: rows.map(({ invoiceLines, termTypes, invoicePurpose: ip, ...r }) => ({
+        ...r,
+        kindLabel: WALLET_KIND_WORD[r.kind] ?? r.kind,
+        purpose: r.invoiceId ? invoicePurpose(invoiceLines, ip, termTypes) : null,
+        cancellable: !r.cancelledAt && !r.reversalOfId && ['CREDIT', 'DEBIT', 'INVOICE_PAYMENT'].includes(r.kind),
+      })),
       page, limit,
       totals: { count: tot.count, credits: money(tot.credits), debits: money(tot.debits), net: money(tot.credits - tot.debits), families: tot.families },
       now: { balance: money(bal.balance), familiesInCredit: bal.inCredit },

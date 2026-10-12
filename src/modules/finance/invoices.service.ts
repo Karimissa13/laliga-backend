@@ -545,9 +545,13 @@ export class InvoicesService {
     if (!inv) throw new NotFoundException('Invoice not found');
 
     const completed = (inv.payments || []).filter((p) => p.status === PaymentStatus.COMPLETED);
-    const paid = completed.filter((p) => p.direction === PaymentDirection.INBOUND)
+    // A wallet payment taken back (a reversing entry) un-pays the invoice; a refund doesn't —
+    // it comes with a credit note, which takes the amount off what was charged.
+    const reversed = completed.filter((p) => p.direction === PaymentDirection.REFUND && p.reversalOfId)
       .reduce((s, p) => s + Number(p.amount), 0);
-    const refunded = completed.filter((p) => p.direction === PaymentDirection.REFUND)
+    const paid = completed.filter((p) => p.direction === PaymentDirection.INBOUND)
+      .reduce((s, p) => s + Number(p.amount), 0) - reversed;
+    const refunded = completed.filter((p) => p.direction === PaymentDirection.REFUND && !p.reversalOfId)
       .reduce((s, p) => s + Number(p.amount), 0);
 
     const net = money(paid - refunded);

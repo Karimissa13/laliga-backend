@@ -127,7 +127,7 @@ export class FinanceReportsService {
     const rows: any[] = await this.ds.query(`
       SELECT * FROM (
         SELECT pay.id, pay."paidAt", pay.method, pay.direction, pay.amount::float AS amount, pay.reference,
-               pay."merchantName", pay."merchantNumber", pay.notes,
+               pay."merchantName", pay."merchantNumber", pay.notes, pay."reversalOfId",
                i.id AS "invoiceId", i.number AS "invoiceNumber", i.status AS "invoiceStatus",
                ${BALANCE_SQL('i')}::float AS balance,
                g.id AS "guardianId", g.reference AS "parentRef", g."fullName" AS "parentName",
@@ -157,7 +157,7 @@ export class FinanceReportsService {
         id: r.id,
         date: r.paidAt,
         method: r.method,
-        methodLabel: (r.direction === 'REFUND' ? 'Refund — ' : '') + (METHOD_LABEL[r.method] ?? r.method),
+        methodLabel: (r.direction === 'REFUND' ? (r.reversalOfId ? 'Taken back — ' : 'Refund — ') : '') + (METHOD_LABEL[r.method] ?? r.method),
         direction: r.direction,
         merchant: r.merchantName ?? null,
         merchantId: r.merchantNumber ?? null,
@@ -295,7 +295,7 @@ export class FinanceReportsService {
              (SELECT max(x."paidAt") FROM payments x WHERE x."invoiceId" = i.id AND x.status = 'COMPLETED' AND x.direction = 'INBOUND') AS "lastPaymentAt",
              (SELECT string_agg(DISTINCT x.method::text, ',') FROM payments x WHERE x."invoiceId" = i.id AND x.status = 'COMPLETED' AND x.direction = 'INBOUND') AS methods,
              (SELECT count(*)::int FROM payments x WHERE x."invoiceId" = i.id AND x.status = 'COMPLETED' AND x.direction = 'INBOUND' AND x.method <> 'WALLET') AS "paymentsCount",
-             (SELECT string_agg(x.notes, ' · ') FROM payments x WHERE x."invoiceId" = i.id AND x.direction = 'REFUND' AND x.notes IS NOT NULL) AS "refundReason",
+             (SELECT string_agg(x.notes, ' · ') FROM payments x WHERE x."invoiceId" = i.id AND x.direction = 'REFUND' AND x."reversalOfId" IS NULL AND x.notes IS NOT NULL) AS "refundReason",
              (SELECT max(c."sentAt") FROM communications c WHERE c.kind = 'invoice' AND c.attachments @> jsonb_build_array(jsonb_build_object('id', i.id::text))) AS "emailedAt",
              (SELECT l.name FROM locations l WHERE l.id = ${LOCATION_SQL('i')}) AS location
       ${base}

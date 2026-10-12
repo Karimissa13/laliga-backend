@@ -25,6 +25,8 @@ export class WalletLedgerQueryDto {
   @ApiPropertyOptional({ example: '2026-09-01' }) @IsOptional() @IsDateString() from?: string;
   @ApiPropertyOptional({ example: '2026-10-31' }) @IsOptional() @IsDateString() to?: string;
   @ApiPropertyOptional({ enum: ['CREDIT', 'DEBIT'] }) @IsOptional() @IsIn(['CREDIT', 'DEBIT']) type?: string;
+  @ApiPropertyOptional({ enum: ['used', 'added', 'cancelled'], description: 'used = spent on invoices; added = credits in; cancelled = cancelled entries' })
+  @IsOptional() @IsIn(['used', 'added', 'cancelled']) kind?: string;
   @ApiPropertyOptional({ description: 'Family name, PR- number, mobile or reason' }) @IsOptional() @IsString() @MaxLength(100) search?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() locationId?: string;
   @ApiPropertyOptional({ description: 'One family' }) @IsOptional() @IsUUID() guardianId?: string;
@@ -63,10 +65,10 @@ export class DashboardController {
   async walletLedgerCsv(@Query() q: WalletLedgerQueryDto, @Res() res: Response) {
     const r = await this.overviewSvc.walletLedger({ ...q, page: 1, limit: 100000 });
     const csv = FinanceReportsService.toCsv(
-      ['Date', 'Parent No', 'Parent', 'Mobile', 'Type', 'Amount', 'Balance After', 'Reason', 'Invoice No', 'Wallet Balance Today'],
-      r.data.map((t: any) => [dmy(t.date), t.parentRef, t.parent, t.mobile, t.type === 'CREDIT' ? 'Credit' : 'Debit',
+      ['Date', 'Parent No', 'Parent', 'Mobile', 'Type', 'How', 'Amount', 'Balance After', 'Reason', 'Invoice No', 'Used For', 'Cancelled', 'Wallet Balance Today'],
+      r.data.map((t: any) => [dmy(t.date), t.parentRef, t.parent, t.mobile, t.type === 'CREDIT' ? 'Credit' : 'Debit', t.kindLabel,
         (t.type === 'CREDIT' ? t.amount : -t.amount).toFixed(2), Number(t.balanceAfter).toFixed(2), t.reason ?? '', t.invoiceNumber ?? '',
-        Number(t.walletBalance).toFixed(2)]));
+        t.purpose ?? '', t.cancelledAt ? `Yes — ${t.cancelReason ?? ''}` : '', Number(t.walletBalance).toFixed(2)]));
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="Wallet-ledger.csv"');
     res.send(csv);

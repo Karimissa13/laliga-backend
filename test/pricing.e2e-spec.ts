@@ -263,7 +263,7 @@ describe('Price list, term options and extras (e2e)', () => {
     const credits = (await request(http).get('/api/v1/dashboard/wallet-ledger?type=CREDIT').set(auth()).expect(200)).body;
     expect(credits.data.every((e: any) => e.type === 'CREDIT')).toBe(true);
     const csv = await request(http).get('/api/v1/dashboard/wallet-ledger.csv').set(auth()).expect(200);
-    expect(csv.text).toMatch(/Date,Parent No,Parent,Mobile,Type,Amount,Balance After/);
+    expect(csv.text).toMatch(/Date,Parent No,Parent,Mobile,Type,How,Amount,Balance After,Reason,Invoice No,Used For,Cancelled/);
 
     // Coaches have none of these.
     const coachTok = (await request(http).post('/api/v1/auth/login')

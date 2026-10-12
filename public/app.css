@@ -333,6 +333,9 @@ table.dir td.em{max-width:200px;overflow:hidden;text-overflow:ellipsis}
 .fwadd{padding:14px 16px;margin-bottom:12px}
 .fwaddh{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 .fwtbl td.good{color:var(--good)}
+tr.wcx td{opacity:.6} tr.wcx td.num{text-decoration:line-through}
+.walpay{padding:14px 16px;margin-top:12px;border-left:4px solid var(--good)}
+.walhead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
 .dlink{cursor:pointer;transition:border-color .15s,box-shadow .15s,background .15s}
 .card.dlink:hover{border-color:var(--coral);box-shadow:0 2px 10px rgba(0,0,0,.06)}
 .pr.dlink:hover,.ptile.dlink:hover,.unp.dlink:hover,.aging .dlink:hover{background:var(--surface-2)}

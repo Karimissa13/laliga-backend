@@ -106,6 +106,15 @@ export class WalletCreditDto {
   @ApiProperty() @IsNumber() @Min(0.01) amount: number;
   @ApiProperty({ example: 'Goodwill — session cancelled by the academy' }) @IsString() @MinLength(3) @MaxLength(250) reason: string;
 }
+/** Pay an invoice with wallet credit (optionally for one instalment). */
+export class WalletPayDto {
+  @ApiProperty() @IsNumber() @Min(0.01) amount: number;
+  @ApiPropertyOptional({ description: 'The instalment this pays (1–5)' }) @IsOptional() @IsInt() @Min(1) @Max(5) instalmentSeq?: number;
+}
+/** Cancelling a wallet entry, or taking a wallet payment back: always with a reason. */
+export class WalletCancelDto {
+  @ApiProperty({ example: 'Added to the wrong family' }) @IsString() @MinLength(3) @MaxLength(250) reason: string;
+}
 export class WalletAdjustDto {
   @ApiProperty() @IsNumber() @Min(0.01) amount: number;
   @ApiPropertyOptional() @IsOptional() @IsString() reason?: string;

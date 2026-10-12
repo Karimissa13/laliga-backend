@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Delete, Get, Headers, Param, ParseIntPipe, Patch, Post, Put, Query,
+  Body, Controller, Delete, Get, Headers, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Put, Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -17,7 +17,7 @@ import { DomainEvents } from '../../common/domain-events';
 import { CreateProductDto, UpdatePriceEntryDto, UpdateProductDto } from './dto/pricing.dto';
 import {
   CreateDiscountDto, CreateFeeDto, GenerateInvoiceDto, RecordPaymentDto, RefundDto,
-  SponsorDto, UpdateDiscountDto, UpdateFeeDto, WalletAdjustDto, WalletCreditDto, WriteOffDto, SetSiblingOrderDto,
+  SponsorDto, UpdateDiscountDto, UpdateFeeDto, WalletAdjustDto, WalletCreditDto, WalletPayDto, WalletCancelDto, WriteOffDto, SetSiblingOrderDto,
   InvoiceFilterDto, AdjustInvoiceDto, SetInstalmentsDto, InstalmentFlagDto, WaiveInstalmentDto,
 } from './dto/finance.dto';
 import { PaginationDto } from '../../common/dto/pagination.dto';
@@ -214,8 +214,27 @@ export class FinanceController {
   }
 
   @Post('invoices/:id/pay-from-wallet') @RequirePermissions('payment.create') @Audit('payment.wallet', 'invoice')
-  payFromWallet(@Param('id') id: string, @Body() dto: WalletAdjustDto, @CurrentUser() user: AuthUser) {
-    return this.payments.payFromWallet(id, dto.amount, user?.id);
+  @ApiOperation({ summary: "Pay the invoice (season, camp, trip, league, kit…) with the family's wallet credit" })
+  async payFromWallet(@Param('id') id: string, @Body() dto: WalletPayDto, @CurrentUser() user: AuthUser) {
+    const r = await this.payments.payFromWallet(id, dto.amount, user?.id, { instalmentSeq: dto.instalmentSeq });
+    const plan = (await this.instalments.countsFor([id])).get(id) ?? null;
+    return { ...r, invoice: { ...r.invoice, statusLabel: invoiceStatusLabel(r.invoice.status, plan) } };
+  }
+
+  @Post('payments/:id/reverse-wallet') @RequirePermissions('payment.create', 'wallet.manage') @Audit('payment.wallet_reverse', 'payment')
+  @ApiOperation({ summary: 'Take a wallet payment back to the wallet — the invoice owes it again (no credit note)' })
+  reverseWallet(@Param('id', ParseUUIDPipe) id: string, @Body() dto: WalletCancelDto, @CurrentUser() user: AuthUser) {
+    return this.payments.reverseWalletPayment(id, dto.reason, user?.id);
+  }
+
+  @Get('guardians/:id/wallet/payable') @RequirePermissions('wallet.view', 'invoice.view')
+  @ApiOperation({ summary: "The family's invoices wallet credit could pay, with what each owes and what it is for" })
+  walletPayable(@Param('id') id: string) { return this.payments.walletPayableInvoices(id); }
+
+  @Post('wallet-entries/:id/cancel') @RequirePermissions('wallet.manage') @Audit('wallet.cancel', 'wallet')
+  @ApiOperation({ summary: 'Cancel a wallet entry: a cancelling entry takes it back; both stay on the statement' })
+  cancelWalletEntry(@Param('id', ParseUUIDPipe) id: string, @Body() dto: WalletCancelDto, @CurrentUser() user: AuthUser) {
+    return this.payments.cancelWalletEntry(id, dto.reason, user?.id);
   }
 
   // ---------------- Wallet ----------------

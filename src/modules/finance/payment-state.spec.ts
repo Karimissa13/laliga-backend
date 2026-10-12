@@ -52,3 +52,14 @@ describe('invoiceStatusLabel — the payment status in words (Oct 2026)', () => 
     expect(invoiceStatusLabel('CANCELLED')).toBe('Cancelled');
   });
 });
+
+describe('invoicePurpose — what an invoice was for (wallet statement)', () => {
+  const { invoicePurpose } = jest.requireActual('./invoice-purpose');
+  it('names term options, camps, trips, leagues and kits', () => {
+    expect(invoicePurpose([{ stream: 'ACADEMY', package: 'FULL' }, { stream: 'KITS' }])).toBe('Full season + Kit');
+    expect(invoicePurpose([{ stream: 'ACADEMY', package: 'T1' }], null, ['CAMP'])).toBe('Camp');
+    expect(invoicePurpose([{ stream: 'SALOU_CUP' }])).toBe('Salou Cup (trip)');
+    expect(invoicePurpose([{ stream: 'MAN_CITY_LEAGUE' }])).toBe('Man City League');
+    expect(invoicePurpose([{ stream: 'ACADEMY', package: 'FULL' }], 'MOVE_UP')).toBe('Squad move-up');
+  });
+});
