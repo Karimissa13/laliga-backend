@@ -71,6 +71,18 @@ main{flex:1;min-width:0}
 .top{background:var(--surface);border-bottom:1px solid var(--line);padding:0 26px;height:56px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
 .top h2{font-size:17px;font-weight:700;letter-spacing:-.3px}
 .top .acts{display:flex;gap:8px;align-items:center}
+.top .tl{display:flex;gap:12px;align-items:center;min-width:0}
+.top .tl h2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .back{white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+/* Payment card: sales and pending by term option */
+.ptbl{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0 4px}
+.ptbl th,.ptbl td{padding:5px 6px;border-top:1px solid var(--line);text-align:left}
+.ptbl thead th{border-top:0;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:600}
+.ptbl .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ptbl td.good{color:var(--good)} .ptbl td.bad{color:var(--bad)}
+.ptbl tr.zero td{color:var(--faint)}
+.ptbl tbody tr.dlink:hover{background:var(--surface-2)}
+.ptbl tfoot th{font-weight:700}
 .content{padding:22px 26px 60px;max-width:1400px}
 
 /* generic */

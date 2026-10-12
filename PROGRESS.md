@@ -358,3 +358,11 @@ Karim's list (12 Oct). Each card opens its report with the dashboard's season an
 - [x] **Banner:** the signed-in person's name and role (with initials) sit at the top left under the academy name, for every account (super admin, coach…); Password and Sign out stay at the bottom.
 - [x] Clickable cards work from the keyboard (Tab, then Enter).
 - [x] **Tests** — 118 unit + 152 e2e (new: each report against its card, coach access refused). Clicked through on a local copy: every card, block and count matched.
+
+## ✅ Completed — Back to where you were; payment card by term option — 12 Oct 2026
+
+Karim's choices (12 Oct): a back button plus the browser's Back; a term-option table added to the card; non-term invoices in an "Other" row.
+
+- [x] **"← Back to …"** at the top left of any screen opened from another one (a dashboard card, a report row, an invoice list, a player, a term report). It returns to exactly the screen you left — its filters, tab, grouping and scroll position — and works step by step (Dashboard → Invoices → Player → back → back). The browser / mouse Back button does the same. The side menu starts afresh.
+- [x] **Payment status & unpaid summary:** a table under the donut with **Term 1, Term 2, Term 3, Terms 1 & 2, Terms 2 & 3, Full season** and **Other (kits, league, cups…)**: Sales, Collected and Pending for each, plus a total row. Sales = collected + pending, as Total revenue, so the total matches the revenue card. A family invoice with two children on different options is split by child. Squad move-up invoices, kits, league, cups and custom lines count as Other. Each row opens its invoices (new `package` filter on the invoice list).
+- [x] **Tests** — 118 unit + 152 e2e (the term rows add up to total revenue and pending; the filter works). Click-through checked on a local copy.

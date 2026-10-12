@@ -45,6 +45,8 @@ export class InvoiceRegisterQueryDto {
   @ApiPropertyOptional({ description: "The season's invoices, as the dashboard counts them" }) @IsOptional() @IsUUID() seasonId?: string;
   @ApiPropertyOptional({ description: 'Only invoices that count as revenue (not drafts or cancelled)' })
   @IsOptional() @Transform(boolParam) @IsBoolean() billed?: boolean;
+  @ApiPropertyOptional({ enum: ['T1', 'T2', 'T3', 'T1_2', 'T2_3', 'FULL', 'OTHER'], description: 'Invoices with a term fee for this term option; OTHER = kits, league, cups, custom and move-ups' })
+  @IsOptional() @IsIn(['T1', 'T2', 'T3', 'T1_2', 'T2_3', 'FULL', 'OTHER']) package?: string;
   @ApiPropertyOptional() @IsOptional() @IsDateString() invoiceFrom?: string;
   @ApiPropertyOptional() @IsOptional() @IsDateString() invoiceTo?: string;
   @ApiPropertyOptional() @IsOptional() @IsDateString() paymentFrom?: string;

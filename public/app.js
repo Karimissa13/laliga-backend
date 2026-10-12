@@ -101,11 +101,65 @@ function renderNav(){
     h += `<a class="nav" data-k="${p.k}"><span style="width:14px;display:inline-block;opacity:.7">${p.icon}</span>${p.t}</a>`;
   }
   $('nav').innerHTML = h;
-  $('nav').querySelectorAll('a.nav').forEach(a => a.onclick = () => go(a.dataset.k));
+  $('nav').querySelectorAll('a.nav').forEach(a => a.onclick = () => go(a.dataset.k, { root: true }));
 }
 
 let CURRENT = 'dashboard';
-async function go(k){
+
+// ---------- back trail ----------
+// Opening a screen from inside another (a dashboard card, a report row, a player…)
+// remembers where you were — its filters, tab and scroll — so "← Back to …" (or the
+// browser's Back button) returns to exactly that place. The side menu starts afresh.
+let SCREEN = { k: 'dashboard' };   // what is on screen: a page, a player or a report
+const NAV = [];                    // the screens to go back to, most recent last
+// Each page's own filters, kept with the screen so going back restores them.
+const NAV_STATE = {
+  dashboard: [() => DASHF, (v) => { DASHF = v; }], players: [() => PF, (v) => { PF = v; }],
+  guardians: [() => GF, (v) => { GF = v; }], leads: [() => LF, (v) => { LF = v; }],
+  development: [() => DV, (v) => { DV = v; }], paymentReport: [() => PRF, (v) => { PRF = v; }],
+  walletReport: [() => WRF, (v) => { WRF = v; }], revenueReport: [() => RVF, (v) => { RVF = v; }],
+  invoices: [() => IF, (v) => { IF = v; }], inventory: [() => INVF, (v) => { INVF = v; }],
+  teamAttendance: [() => TA, (v) => { TA = v; }], attendance: [() => AD, (v) => { AD = v; }], trials: [() => TS, (v) => { TS = v; }],
+};
+const clone = (v) => (v == null ? v : JSON.parse(JSON.stringify(v)));
+function screenTitle() {
+  if (SCREEN.k === 'player') return PLAYER?.player?.name || 'the player';
+  if (SCREEN.k === 'report') return $('page-title').textContent || 'the report';
+  return PAGES.find((p) => p.k === SCREEN.k)?.t || $('page-title').textContent;
+}
+function navPush() {
+  const st = NAV_STATE[SCREEN.k];
+  NAV.push({ ...SCREEN, title: screenTitle(), state: st ? clone(st[0]()) : undefined, scroll: window.scrollY });
+  try { history.pushState({ laliga: NAV.length }, ''); } catch {}
+}
+/** Before showing screen `k`: remember the one we leave, unless this is a fresh start or a step back. */
+function navBefore(k, opts, same) {
+  if (opts.root) NAV.length = 0;
+  else if (!opts.back && !same) {
+    const top = NAV[NAV.length - 1];
+    if (top && top.k === k && !top.id && !top.report) NAV.pop();   // e.g. "← All players" from a player
+    else navPush();
+  }
+}
+function renderBack() {
+  const s = NAV[NAV.length - 1], el = $('page-back');
+  if (el) el.innerHTML = s ? `<button class="btn sm ghost back" data-act="navBack" title="Back to where you were">← Back to ${esc(s.title)}</button>` : '';
+}
+async function goBack() {
+  const s = NAV.pop(); if (!s) return;
+  closeDrawer();
+  if (s.state !== undefined && NAV_STATE[s.k]) NAV_STATE[s.k][1](clone(s.state));
+  if (s.k === 'player') await window.openPlayer(s.id, { back: true });
+  else if (s.k === 'report') openReport(s.report, { back: true });
+  else await go(s.k, { back: true });
+  window.scrollTo(0, s.scroll || 0);
+}
+window.addEventListener('popstate', () => { if (NAV.length) goBack(); });
+
+async function go(k, opts = {}){
+  navBefore(k, opts, SCREEN.k === k);
+  SCREEN = { k };
+  renderBack();
   CURRENT = k;
   $('nav').querySelectorAll('a.nav').forEach(a=>a.classList.toggle('on', a.dataset.k===k));
   const page = PAGES.find(p=>p.k===k);
@@ -129,6 +183,8 @@ const VIEWS = {};
 // refreshed after anything that changes them (e.g. a coach assignment).
 const LK = { loaded: false };
 const ACT = {};   // actions dispatched by data-act; merged into ACTIONS below
+// The on-screen button steps the browser history back too, so both stay in step.
+ACT.navBack = () => { if (history.state?.laliga) history.back(); else goBack(); };
 const band = (c) => Number(String(c || '').replace(/\D/g, '')) || 0;
 const opt = (v, t, sel) => `<option value="${esc(v)}"${sel ? ' selected' : ''}>${esc(t)}</option>`;
 const trunc = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
@@ -357,8 +413,9 @@ ACT.dPay = (k) => {
   const season = (LK.seasons || []).find((s) => s.id === DASHF.seasonId);
   IF = { page: 1, wide: IF.wide, sort: '', dir: '', quick: '', seasonId: DASHF.seasonId || '', locationId: DASHF.locationId || '' };
   if (PAY_STATUS_WORD[k]) IF.status = k;
-  IF.extra = owed[k] ? owed[k][1] : { billed: 'true' };
-  IF.fromDash = (PAY_STATUS_WORD[k] || owed[k]?.[0] || 'All invoices') + (season ? ' · ' + season.name : '');
+  const pkg = String(k || '').startsWith('PKG:') ? (DASH?.finance?.payments?.byPackage || []).find((r) => r.key === k.slice(4)) : null;
+  IF.extra = owed[k] ? owed[k][1] : pkg ? { billed: 'true', package: pkg.key } : { billed: 'true' };
+  IF.fromDash = (PAY_STATUS_WORD[k] || owed[k]?.[0] || pkg?.label || 'All invoices') + (season ? ' · ' + season.name : '');
   invNewSearch(); go('invoices');
 };
 /** A block on the schedule grid: its details, and where to act on it. */
@@ -470,6 +527,10 @@ function paymentsCard(p) {
   return `<div class="card dcard dpay">${cardHead('Payment status & unpaid summary', `<button class="lnk" data-act="dPay" data-a1="">Invoices →</button>`)}
     <div class="pdon"><svg viewBox="0 0 100 100" class="pd" role="img" aria-label="Invoices by payment status">${arcs}<text x="50" y="50" text-anchor="middle" class="pn">${total}</text><text x="50" y="63" text-anchor="middle" class="pl">invoices</text></svg>
       <div class="plg">${segs.map((s) => `<div class="pr dlink" data-act="dPay" data-a1="${s.k}" role="button" tabindex="0" title="Open these invoices"><i style="background:${s.c}"></i><span>${s.l}</span><b>${s.n}</b><em>${aed0(s.v)}</em></div>`).join('')}</div></div>
+    ${(p.byPackage || []).length ? `<table class="ptbl"><thead><tr><th>Term option</th><th class="num">Sales</th><th class="num">Collected</th><th class="num">Pending</th></tr></thead>
+      <tbody>${p.byPackage.map((r) => `<tr class="dlink${r.sales ? '' : ' zero'}" data-act="dPay" data-a1="PKG:${r.key}" role="button" tabindex="0" title="Open the ${esc(r.label)} invoices"><td>${esc(r.label)}</td>
+        <td class="num">${aed0(r.sales)}</td><td class="num good">${aed0(r.collected)}</td><td class="num bad">${aed0(r.pending)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><th>Total</th><th class="num">${aed0(p.byPackage.reduce((s, r) => s + r.sales, 0))}</th><th class="num">${aed0(p.byPackage.reduce((s, r) => s + r.collected, 0))}</th><th class="num">${aed0(p.byPackage.reduce((s, r) => s + r.pending, 0))}</th></tr></tfoot></table>` : ''}
     <div class="ptiles">
       <div class="ptile dlink" data-act="dPay" data-a1="OPEN" role="button" tabindex="0" title="Open every invoice still owed"><div class="k">Unpaid players</div><div class="v">${p.unpaidPlayers}</div><div class="mini">${p.unpaidInvoices} unpaid invoice${p.unpaidInvoices === 1 ? '' : 's'}</div></div>
       <div class="ptile good${can('wallet.view') ? ' dlink" data-act="dWallet" data-a1="CREDIT" role="button" tabindex="0' : ''}" title="Credit put into family wallets this season: overpayments, refunds to wallet, sibling credits"><div class="k">Wallet credit given</div><div class="v">${aed0(p.walletCredited)}</div><div class="mini">${p.walletCreditedPct == null ? '—' : p.walletCreditedPct + '% of total revenue'}</div></div>
@@ -772,8 +833,11 @@ async function loadPlayers() {
 // ================= players: the player page =================
 let PLAYER = null, PASSPORT = null;
 
-window.openPlayer = async (id) => {
+window.openPlayer = async (id, opts = {}) => {
   closeDrawer();
+  navBefore('player', opts, SCREEN.k === 'player' && SCREEN.id === id);
+  SCREEN = { k: 'player', id };
+  renderBack();
   CURRENT = 'players';
   $('nav').querySelectorAll('a.nav').forEach((a) => a.classList.toggle('on', a.dataset.k === 'players'));
   $('page-title').textContent = 'Player';
@@ -2901,7 +2965,10 @@ ACT.dvSendAll = async () => {
 
 // ---------- the report editor ----------
 let RP = null, RP_T = null;
-function openReport(r) {
+function openReport(r, opts = {}) {
+  navBefore('report', opts, SCREEN.k === 'report' && SCREEN.report?.id === r.id);
+  SCREEN = { k: 'report', report: r };
+  renderBack();
   RP = r;
   CURRENT = 'report';
   $('nav').querySelectorAll('a.nav').forEach((a) => a.classList.toggle('on', a.dataset.k === 'development'));
@@ -4805,7 +4872,7 @@ async function boot(){
   $('me-av').textContent = initials(ME.fullName);
   renderNav();
   const first = PAGES.find(p=>p.k && (!p.perm || can(p.perm)));
-  await go(first ? first.k : 'dashboard');
+  await go(first ? first.k : 'dashboard', { root: true });
 }
 
 (async () => {

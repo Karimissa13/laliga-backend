@@ -35,6 +35,16 @@ const PLAYERS_SQL = (i: string) => `(SELECT COALESCE(json_agg(x ORDER BY x->>'re
   FROM invoice_line_items li JOIN players pl ON pl.id = li."playerId" LEFT JOIN age_groups ag ON ag.id = pl."ageGroupId"
   WHERE li."invoiceId" = ${i}.id) s)`;
 
+/**
+ * The term option (T1 … FULL) a line is the term fee for, or NULL when it isn't one
+ * (kits, league, cups, custom lines, and every line of a squad move-up invoice).
+ * Older lines without a package take their child's enrolment on the invoice.
+ */
+export const LINE_PACKAGE_SQL = (li: string, i: string) => `CASE WHEN ${li}.stream = 'ACADEMY' AND ${li}."productId" IS NULL
+    AND COALESCE(${i}.purpose, '') <> 'MOVE_UP'
+  THEN COALESCE(${li}.package, (SELECT e.package FROM enrolments e WHERE e."invoiceId" = ${i}.id AND e."playerId" = ${li}."playerId"
+    AND e.package IS NOT NULL LIMIT 1)) END`;
+
 const BALANCE_SQL = (i: string) =>
   `GREATEST(${i}.total - ${i}."amountPaid" + ${i}."amountRefunded" - ${i}."writeOffAmount", 0)`;
 
@@ -57,7 +67,7 @@ export interface InvoiceRegisterFilter {
   invoiceFrom?: string; invoiceTo?: string; paymentFrom?: string; paymentTo?: string;
   amountFrom?: number; amountTo?: number;
   /** Quick filters: still owed (issued / part paid with a balance), due-date window, has an instalment plan. */
-  open?: boolean; dueFrom?: string; dueTo?: string; hasPlan?: boolean; seasonId?: string; billed?: boolean;
+  open?: boolean; dueFrom?: string; dueTo?: string; hasPlan?: boolean; seasonId?: string; billed?: boolean; package?: string;
   /** Only these invoices (bulk export of a selection). */
   ids?: string[];
   sort?: InvoiceSortKey; dir?: 'asc' | 'desc';
@@ -227,6 +237,12 @@ export class FinanceReportsService {
     if (f.dueFrom) w.push(`i."dueDate" >= ${p(f.dueFrom)}::date`);
     if (f.dueTo) w.push(`i."dueDate" <= ${p(f.dueTo)}::date`);
     if (f.billed) w.push(`i.status NOT IN ('DRAFT', 'CANCELLED')`);
+    // A term option (the dashboard's term split): invoices with a term fee for it; OTHER = anything else on an invoice.
+    if (f.package === 'OTHER') {
+      w.push(`EXISTS (SELECT 1 FROM invoice_line_items li WHERE li."invoiceId" = i.id AND (${LINE_PACKAGE_SQL('li', 'i')}) IS NULL)`);
+    } else if (f.package) {
+      w.push(`EXISTS (SELECT 1 FROM invoice_line_items li WHERE li."invoiceId" = i.id AND (${LINE_PACKAGE_SQL('li', 'i')}) = ${p(f.package)})`);
+    }
     if (f.hasPlan) w.push(`EXISTS (SELECT 1 FROM invoice_instalments ii WHERE ii."invoiceId" = i.id)`);
     if (f.ids?.length) w.push(`i.id = ANY(${p(f.ids)}::uuid[])`);
     return { where: w.length ? `WHERE ${w.join(' AND ')}` : '', params, p };

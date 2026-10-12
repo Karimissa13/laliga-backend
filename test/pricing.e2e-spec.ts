@@ -239,6 +239,20 @@ describe('Price list, term options and extras (e2e)', () => {
     expect(await count('status=ISSUED')).toBe(f.payments.unpaid.count);
     expect(await count('open=true')).toBe(f.payments.unpaidInvoices);
 
+    // Sales and pending by term option (Term 1 … Full season, then Other): the rows add up to Total revenue.
+    const bp = f.payments.byPackage;
+    expect(bp.map((x: any) => x.key)).toEqual(['T1', 'T2', 'T3', 'T1_2', 'T2_3', 'FULL', 'OTHER']);
+    expect(bp.map((x: any) => x.label).slice(0, 6)).toEqual(['Term 1', 'Term 2', 'Term 3', 'Terms 1 & 2', 'Terms 2 & 3', 'Full season']);
+    expect(bp.reduce((s: number, x: any) => s + x.sales, 0)).toBeCloseTo(f.revenue.total, 0);
+    expect(bp.reduce((s: number, x: any) => s + x.pending, 0)).toBeCloseTo(f.revenue.pending, 0);
+    for (const x of bp) expect(x.sales).toBeCloseTo(x.collected + x.pending, 1);
+    const full = bp.find((x: any) => x.key === 'FULL');
+    expect(full.sales).toBeGreaterThan(0);                       // this suite sells full seasons
+    expect(bp.find((x: any) => x.key === 'OTHER').sales).toBeGreaterThan(0);   // kits, league, cups
+    expect(await count('billed=true&package=FULL')).toBeGreaterThan(0);
+    expect(await count('billed=true&package=OTHER')).toBeGreaterThan(0);
+    await request(http).get('/api/v1/invoice-register?package=T4').set(auth()).expect(400);
+
     // Wallet balance → wallet ledger: today's balance matches the card; each family's balance after its last entry is its wallet.
     const w = (await request(http).get('/api/v1/dashboard/wallet-ledger').set(auth()).expect(200)).body;
     expect(w.now.balance).toBeCloseTo(d.wallet.balance, 1);

@@ -2,6 +2,14 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { RevenueStream } from '../../database/entities';
+import { LINE_PACKAGE_SQL } from '../finance/finance-reports.service';
+
+/** The term options, in the order the payment card lists them; OTHER = everything that isn't a term fee. */
+const PACKAGE_ROWS = [
+  { key: 'T1', label: 'Term 1' }, { key: 'T2', label: 'Term 2' }, { key: 'T3', label: 'Term 3' },
+  { key: 'T1_2', label: 'Terms 1 & 2' }, { key: 'T2_3', label: 'Terms 2 & 3' }, { key: 'FULL', label: 'Full season' },
+  { key: 'OTHER', label: 'Other (kits, league, cups…)' },
+];
 
 const money = (n: number) => Math.round(n * 100) / 100;
 const DAY = 86400000;
@@ -278,7 +286,7 @@ export class DashboardOverviewService {
              inv."termStart"::text AS "termStart",
              inv.total::float AS total, inv.collected::float AS collected, inv.balance::float AS balance,
              inv."writeOffAmount"::float AS "writeOff", inv.subtotal::float AS subtotal,
-             li.stream, li."lineTotal"::float AS net, ag.code AS category
+             li.stream, li."lineTotal"::float AS net, ag.code AS category, ${LINE_PACKAGE_SQL('li', 'inv')} AS package
       FROM inv JOIN invoice_line_items li ON li."invoiceId" = inv.id
       LEFT JOIN players pl ON pl.id = li."playerId" LEFT JOIN age_groups ag ON ag.id = pl."ageGroupId"`,
       [c.season.id, c.season.startDate, c.season.endDate, c.loc]);
@@ -296,6 +304,7 @@ export class DashboardOverviewService {
     const byMonth = new Map(months.map((m) => [m.key, blank()]));
     const byTerm = new Map(c.terms.map((t) => [t.name, blank()]));
     const byCategory = new Map<string, Record<string, number>>();
+    const byPackage = new Map(PACKAGE_ROWS.map((p) => [p.key, { collected: 0, pending: 0 }]));
     const byStream = blank();
     let collected = 0, pending = 0, billed = 0;
     const subtotals = new Map<string, number>();
@@ -315,17 +324,18 @@ export class DashboardOverviewService {
       const cat = l.category ?? 'No child';
       if (!byCategory.has(cat)) byCategory.set(cat, blank());
       const cb = byCategory.get(cat)!; cb[stream] += paid; cb.PENDING += open;
+      const pk = byPackage.get(byPackage.has(l.package) ? l.package : 'OTHER')!; pk.collected += paid; pk.pending += open;
       byStream[stream] += paid + open;
       collected += paid; pending += open;
       if (!seenInv.has(l.id)) { seenInv.add(l.id); billed += l.total; }
     }
-    return { months, byMonth, byTerm, byCategory, byStream, collected, pending, billed, invoices: seenInv.size };
+    return { months, byMonth, byTerm, byCategory, byPackage, byStream, collected, pending, billed, invoices: seenInv.size };
   }
 
   private async finance(c: Ctx) {
     const params = [c.season.id, c.season.startDate, c.season.endDate, c.loc];
     const scope = this.scopeSql();
-    const { months, byMonth, byTerm, byStream, collected, pending, billed } = this.splitRevenue(c, await this.revenueLines(c));
+    const { months, byMonth, byTerm, byPackage, byStream, collected, pending, billed } = this.splitRevenue(c, await this.revenueLines(c));
 
     const round = (o: Record<string, number>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, money(v)]));
     const revenue = money(collected + pending);
@@ -395,6 +405,11 @@ export class DashboardOverviewService {
         totalUnpaid,
         unpaidPctOfRevenue: pct(totalUnpaid),
         aging: { notDue: ag('NOT_DUE'), d0_30: ag('D0_30'), d31_60: ag('D31_60'), d60plus: ag('D60_PLUS') },
+        // Sales (collected + pending, as Total revenue) by term option; the rows add up to Total revenue.
+        byPackage: PACKAGE_ROWS.map((p) => {
+          const b = byPackage.get(p.key)!;
+          return { ...p, sales: money(b.collected + b.pending), collected: money(b.collected), pending: money(b.pending) };
+        }),
         walletCredited: money(credited.amount),
         walletCreditedPct: pct(credited.amount),
       },
