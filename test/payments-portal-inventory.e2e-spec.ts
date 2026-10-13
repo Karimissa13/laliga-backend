@@ -130,15 +130,19 @@ describe('Payment report, invoice email, parent portal, inventory (e2e)', () => 
       const row = (await q(`invoiceNo=${n}`)).data[0];
       expect(row).toMatchObject({ totalInclVat: 5610, received: 2000, wallet: 500, writeOff: 10, pending: 3100, playersCount: 1 });
       expect(row.netReceived).toBeCloseTo(2000 / 1.05, 1);
-      expect(row.subscription).toMatch(/Term 1/);
+      expect(row.subscription).toBe('Term 1');                          // only the package (Karim, 13 Oct 2026)
+      expect((await q(`invoiceNo=${n}&package=T1`)).data).toHaveLength(1);
+      expect((await q(`invoiceNo=${n}&package=FULL`)).data).toHaveLength(0);
       expect(row.emailedAt).toBeTruthy();
     });
 
     it('exports every column', async () => {
       const res = await request(http).get(`/api/v1/invoice-register.csv?invoiceNo=${invoice.number}`).set(auth()).expect(200);
       const [head, line] = res.text.replace(/^﻿/, '').split('\r\n');
-      expect(head.split(',').length).toBe(34);
+      expect(head.split(',').length).toBe(35);
+      expect(head).toContain('Player No,Player Name,Players Count,Subscription Details');
       expect(line.startsWith(invoice.number)).toBe(true);
+      expect(line).toContain(`${child.reference},${child.firstName} ${child.lastName},1,Term 1`);
     });
   });
 

@@ -202,4 +202,22 @@ describe('Players section (e2e)', () => {
       expect(d.team.coach.name).toBe('Guille');
     });
   });
+
+  describe('players export (Karim, 13 Oct 2026)', () => {
+    it('exports every child matching the filters; coaches get no money columns', async () => {
+      const list = (await request(http).get('/api/v1/players?limit=5').set(auth()).expect(200)).body;
+      const one = list.data[0];
+      const csv = await request(http).get(`/api/v1/players/export.csv?playerRef=${encodeURIComponent(one.reference)}`).set(auth()).expect(200);
+      expect(csv.headers['content-type']).toMatch(/text\/csv/);
+      const [head, line] = csv.text.replace(/^﻿/, '').split('\r\n');
+      expect(head).toMatch(/^Player No,Player Name,Date of Birth,Gender,Category,Level,Team/);
+      expect(head).toContain('Payment Status');
+      expect(line.startsWith(one.reference)).toBe(true);
+      const all = await request(http).get('/api/v1/players/export.csv').set(auth()).expect(200);
+      expect(all.text.split('\r\n').length - 1).toBe(list.meta.total);       // every page, not just one
+      const coachTok = (await request(http).post('/api/v1/auth/login').send({ email: 'sergio@laligaacademy.local', password: 'Coach@12345' })).body.accessToken;
+      const c = await request(http).get('/api/v1/players/export.csv').set({ Authorization: `Bearer ${coachTok}` }).expect(200);
+      expect(c.text).not.toContain('Payment Status');
+    });
+  });
 });

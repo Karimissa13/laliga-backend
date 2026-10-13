@@ -165,14 +165,14 @@ export class FinanceReportsController {
   async registerCsv(@Query() q: InvoiceRegisterQueryDto, @Res() res: Response) {
     const r = await this.reports.invoiceRegister(q, { all: true });
     const csv = FinanceReportsService.toCsv(
-      ['Invoice No', 'Parent No', 'Parent', 'Email', 'Mobile', 'Players', 'Players Count', 'Subscription Details', 'Location',
+      ['Invoice No', 'Parent No', 'Parent', 'Email', 'Mobile', 'Player No', 'Player Name', 'Players Count', 'Subscription Details', 'Location',
         'Total Amount Including VAT', 'Total Amount Excluding VAT', 'VAT Amount', 'Discount', 'Partial Refund Including VAT', 'Refund Reason',
         'Write Off Amount Including VAT', 'Write Off Reason', 'Amount Received Including VAT', 'VAT on Received Amount',
         'Net Amount Received Excluding VAT', 'Wallet Applied', 'Total Pending Amount Including VAT', 'VAT on Pending Amount',
         'Net Amount Pending Excluding VAT', 'Total Installments', 'Paid Installments', 'Pending Installments', 'Invoice Date',
         'Due Date', 'Payment Status', 'Payment Date', 'Payment Method', 'Additional Invoice', 'Emailed'],
       r.data.map((i) => [i.number, i.parent.ref, i.parent.name, i.parent.email, i.parent.mobile,
-        (i.players || []).map((p: any) => `${p.ref} : ${p.name}`).join('; '), i.playersCount, i.subscription, i.location,
+        (i.players || []).map((p: any) => p.ref).join('; '), (i.players || []).map((p: any) => p.name).join('; '), i.playersCount, i.subscription, i.location,
         f2(i.totalInclVat), f2(i.totalExclVat), f2(i.vat), f2(i.discount), f2(i.refunded), i.refundReason,
         f2(i.writeOff), i.writeOffReason, f2(i.received), f2(i.vatOnReceived), f2(i.netReceived), f2(i.wallet),
         f2(i.pending), f2(i.vatOnPending), f2(i.netPending), i.installments.total, i.installments.paid, i.installments.pending,

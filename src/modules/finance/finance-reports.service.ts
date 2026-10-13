@@ -3,9 +3,9 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { InstalmentsService } from './instalments.service';
 import { DataSource } from 'typeorm';
 import { PaymentMethod } from '../../database/entities';
-import { PACKAGE_LABEL } from './pricing';
 import { dubaiToday } from '../../common/dubai-date';
 import { invoiceStatusLabel } from './payment-state';
+import { TERM_TYPES_SQL, invoicePurpose } from './invoice-purpose';
 
 const money = (n: number) => Math.round(n * 100) / 100;
 
@@ -279,7 +279,8 @@ export class FinanceReportsService {
              COALESCE(sum(i."amountRefunded"), 0)::float AS refunded
       ${base}`, params);
     const rows: any[] = await this.ds.query(`
-      SELECT i.id, i.number, i.type, i.status, i."issueDate"::text AS "issueDate", i."dueDate"::text AS "dueDate",
+      SELECT i.id, i.number, i.type, i.status, i.purpose, i."issueDate"::text AS "issueDate", i."dueDate"::text AS "dueDate",
+             ${TERM_TYPES_SQL('i')} AS "termTypes",
              i.subtotal::float AS subtotal, i."discountTotal"::float AS "discountTotal", i."vatTotal"::float AS "vatTotal",
              i.total::float AS total, i."amountPaid"::float AS "amountPaid", i."amountRefunded"::float AS refunded,
              i."writeOffAmount"::float AS "writeOff", i."writeOffReason", i.installments, i.notes,
@@ -340,17 +341,13 @@ export class FinanceReportsService {
     };
   }
 
+  /**
+   * Subscription details = only the package registered (Karim, 13 Oct 2026): "Full season",
+   * "Term 1", "Terms 1 & 2 + Kit", "Camp", "Salou Cup (trip)" — so the list can be filtered
+   * and exported by package. The child's name and number have their own columns.
+   */
   private subscriptionText(r: any): string {
-    const players = (r.players || []) as Array<{ name: string }>;
-    const terms = ((r.terms || []) as Array<{ term: string; start: string; end: string; season: string }>)
-      .sort((a, b) => a.start.localeCompare(b.start));
-    const pkg = (r.lines || []).find((l: any) => l.package)?.package as keyof typeof PACKAGE_LABEL | undefined;
-    const fmt = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
-    if (terms.length) {
-      const label = pkg ? PACKAGE_LABEL[pkg] : terms.map((t) => t.term).join(', ');
-      return `${players.map((p) => p.name).join(', ')} — ${terms[0].season} ${label} · ${fmt(terms[0].start)} – ${fmt(terms[terms.length - 1].end)}`;
-    }
-    return (r.lines || []).map((l: any) => l.description).join('; ');
+    return invoicePurpose(r.lines, r.purpose, r.termTypes);
   }
 
   // ----------------------------------------------------------------- CSV

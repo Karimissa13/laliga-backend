@@ -450,3 +450,11 @@ Karim (13 Oct): LA-000008 (U8, full season, 2 a week) said 66 sessions; a full s
 - [x] **White background:** the admin always uses the light theme, whatever the computer's dark-mode setting. The sidebar stays dark, as in the old admin.
 - [x] **Inventory:** the LaLiga / ADSC / Both switch and the ADSC choice on new items are removed — LaLiga stock only. Live had no ADSC stock.
 - [x] **Tests:** 126 unit + 166 e2e (68 for a full season, 56 of 68 from 13 Oct, Term 1 = 30 / 18 left from 12 Oct, 3 a week = 102, 1 a week = 34).
+
+## ✅ Completed — Logo, players export, leads stay listed, invoice columns by package — 13 Oct 2026
+
+- [x] **Logo:** the LaLiga Academy Abu Dhabi logo at the top left of the sidebar (`/brand/logo-on-dark.png`, white "ACADEMY" for the dark bar, the same artwork as the invoice PDF and the reminder email, 852 px shown at 176 px so it stays sharp). The sign-in card uses the dark-text version Karim sent (`/brand/logo-on-light.png`).
+- [x] **Players → Export Excel:** every child matching the filters on screen (all pages): player no, name, date of birth, gender, category, level, team, days, coach, term option, season, location, parent no / name / email / mobile, payment status / invoice / balance (only for roles that see money), registered, archived, latest comment. Audited (`player.export`).
+- [x] **Trials & Leads:** the list opens on **All**, so a lead marked "Not joining" (or a no-show) stays listed; open leads stay on top; the tab and filters chosen are kept.
+- [x] **Invoices:** **Player No** and **Player Name** are separate columns (on screen and in Excel). **Subscription details** show only the package ("Full season", "Term 1", "Terms 1 & 2 + Kit", "Camp", "Salou Cup (trip)"). New filter **Term option / package** (Term 1 … Full season, Other).
+- [x] **Tests:** 126 unit + 167 e2e (players export incl. coach without money columns; invoice CSV columns; package filter).

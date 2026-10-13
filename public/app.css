@@ -34,6 +34,11 @@ a{color:var(--coral);text-decoration:none}
 #login{display:grid;place-items:center;min-height:100vh;padding:20px}
 #login .box{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:32px;width:100%;max-width:380px;box-shadow:var(--shadow)}
 #login h1{font-size:22px;font-weight:800;letter-spacing:-.5px}
+#login .lbrand{margin-bottom:18px}
+#login .lbrand img{display:block;width:200px;height:auto}
+#login .lbrand p{margin:8px 0 0;font-size:12px}
+/* The academy logo (852 × 235 artwork, shown smaller so it stays sharp) */
+aside .brand img{display:block;width:176px;height:auto}
 #login p{color:var(--muted);margin:6px 0 22px;font-size:13.5px}
 .fld{margin-bottom:12px}
 .fld label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-weight:500}

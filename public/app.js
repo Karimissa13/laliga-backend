@@ -725,7 +725,7 @@ let PF = { page: 1 };   // kept across visits, so "back to players" returns to t
 
 VIEWS.players = async () => {
   await loadLookups();
-  if (can('player.create')) $('page-acts').innerHTML = `<button class="btn sm" data-act="go" data-a1="register">+ Register a child</button>`;
+  $('page-acts').innerHTML = `<button class="btn sm ghost" data-act="playersCsv" title="Every child matching the filters below">Export Excel</button>${can('player.create') ? '<button class="btn sm" data-act="go" data-a1="register">+ Register a child</button>' : ''}`;
   const f = (k, label, ph, type) => `<div><label class="lbl" for="f-${k}">${label}</label><input class="in" id="f-${k}"${type ? ` type="${type}"` : ''} placeholder="${ph || ''}"></div>`;
   const s = (k, label) => `<div><label class="lbl" for="f-${k}">${label}</label><select class="sel" id="f-${k}"></select></div>`;
   $('view').innerHTML = `
@@ -791,6 +791,14 @@ function fillPlayerSelects() {
 }
 
 ACT.runPlayerSearch = () => { readPlayerFilters(); PF.page = 1; loadPlayers(); };
+/** Export the player list with the filters on screen (all pages). */
+ACT.playersCsv = async () => {
+  readPlayerFilters();
+  const qs = new URLSearchParams();
+  for (const k of PF_KEYS) if (PF[k]) qs.set(k, PF[k]);
+  if (PF.includeArchived) qs.set('includeArchived', 'true');
+  try { await fetchFile('/players/export.csv?' + qs, 'Players.csv'); } catch (e) { toast(e.message); }
+};
 ACT.clearPlayerFilters = () => { PF = { page: 1 }; VIEWS.players(); };
 ACT.playerPage = (n) => { PF.page = Math.max(1, Number(n) || 1); loadPlayers(); };
 
@@ -1744,7 +1752,9 @@ const ACT_WORD = { COMMENT: 'Comment', CALL: 'Call', WHATSAPP: 'WhatsApp', EMAIL
   ASSIGNED: 'Assigned', TRIAL_BOOKED: 'Trial booked', TRIAL_RESULT: 'Trial', LOST: 'Not joining', CONVERTED: 'Registered', EDITED: 'Edited', CREATED: 'Enquiry' };
 const CALL_WORD = { ANSWERED: 'answered', NO_ANSWER: 'no answer', BUSY: 'busy', WRONG_NUMBER: 'wrong number' };
 
-let LF = { status: 'OPEN', page: 1 };
+// Every lead by default — one marked "Not joining" or "No-show" stays listed (Karim, 13 Oct 2026);
+// the tab and filters chosen are kept until changed.
+let LF = { status: '', page: 1 };
 const LF_KEYS = ['search', 'source', 'assignedToId', 'category', 'createdFrom', 'createdTo', 'trialFrom', 'trialTo', 'hasComments'];
 let LEADS_OWNERS = null;
 
@@ -1766,8 +1776,8 @@ VIEWS.leads = async () => {
       <div class="qitem" data-act="leadTab" data-a1="TRIAL_BOOKED"><span class="qn">${st.trialsThisWeek}</span><span class="ql">Trials in the next 7 days</span></div>
       <div class="qitem ok" data-act="leadTab" data-a1="REGISTERED"><span class="qn">${st.joined30}<span style="font-size:13px;font-weight:600;color:var(--muted)"> / ${st.last30}</span></span><span class="ql">Joined from last 30 days' enquiries (${st.conversion30}%)</span></div>
     </div>
-    <div class="tabs">${tab('OPEN', 'To work on', st.open)}${tab('DUE', 'Due today', st.due, st.overdue > 0)}
-      ${LEAD_STAGES.map(([k, l]) => tab(k, l, st[k])).join('')}${tab('', 'All')}</div>
+    <div class="tabs">${tab('', 'All')}${tab('OPEN', 'To work on', st.open)}${tab('DUE', 'Due today', st.due, st.overdue > 0)}
+      ${LEAD_STAGES.map(([k, l]) => tab(k, l, st[k])).join('')}</div>
     <div class="card filters">
       <div class="fgrid">
         <div class="w2"><label class="lbl" for="lf-search">Search</label><input class="in" id="lf-search" value="${v('search')}" placeholder="Parent, child, mobile, email or TR number"></div>
@@ -3636,7 +3646,7 @@ async function loadPaymentReport() {
 const INV_STATUS = [['', 'Any payment status'], ['ISSUED', 'Invoice issued (unpaid)'], ['PART_PAID', 'Partial payment'], ['PAID', 'Paid'],
   ['OVERDUE', 'Payment pending (overdue)'], ['DRAFT', 'Draft (not sent)'], ['SPONSORED', 'Sponsored'], ['REFUNDED', 'Refunded'],
   ['WRITTEN_OFF', 'Written off'], ['CANCELLED', 'Cancelled']];
-const IF_KEYS = ['keyword', 'invoiceNo', 'playerNo', 'parentNo', 'status', 'method', 'additional', 'custom', 'ageGroupId', 'locationId',
+const IF_KEYS = ['keyword', 'invoiceNo', 'playerNo', 'parentNo', 'status', 'method', 'additional', 'custom', 'ageGroupId', 'locationId', 'package',
   'termId', 'invoiceFrom', 'invoiceTo', 'paymentFrom', 'paymentTo', 'amountFrom', 'amountTo'];
 let IF = { page: 1, wide: false, sort: '', dir: '', quick: '' };
 // Selection for bulk actions: ticked ids (kept across pages), or every invoice in the search.
@@ -3682,6 +3692,7 @@ VIEWS.invoices = async () => {
       <div><label class="lbl" for="if-custom">Custom invoices</label>${sel('custom', [['', 'Show all'], ['exclude', "Don't show custom"], ['only', 'Only custom']])}</div>
       <div><label class="lbl" for="if-ageGroupId">Category</label>${sel('ageGroupId', [['', 'Any category'], ...LK.ageGroups.map((a) => [a.id, a.code])])}</div>
       <div><label class="lbl" for="if-locationId">Location</label>${sel('locationId', [['', 'All locations'], ...LK.locations.map((l) => [l.id, shortLoc(l.name)])])}</div>
+      <div><label class="lbl" for="if-package">Term option / package</label>${sel('package', [['', 'Any package'], ['T1', 'Term 1'], ['T2', 'Term 2'], ['T3', 'Term 3'], ['T1_2', 'Terms 1 & 2'], ['T2_3', 'Terms 2 & 3'], ['FULL', 'Full season'], ['OTHER', 'Other (kits, league, cups…)']])}</div>
       <div><label class="lbl" for="if-termId">Term</label>${sel('termId', [['', 'Any term'], ...LK.terms.map((t) => [t.id, t.name + (LK.seasons.find((s) => s.id === t.seasonId) ? ' · ' + LK.seasons.find((s) => s.id === t.seasonId).name : '')])])}</div>
       <div><label class="lbl" for="if-invoiceFrom">Invoice date from</label><input class="in" type="date" id="if-invoiceFrom" value="${v('invoiceFrom')}"></div>
       <div><label class="lbl" for="if-invoiceTo">Invoice date to</label><input class="in" type="date" id="if-invoiceTo" value="${v('invoiceTo')}"></div>
@@ -3777,7 +3788,7 @@ async function loadInvoices() {
     const wide = IF.wide;
     INV_ROWS = new Map(d.data.map((i) => [i.id, i]));
     // "All columns" matches the old screen: players count, separate reasons, instalments as three columns.
-    const head = [['act', 'Action'], ['no', 'Invoice No'], ['parent', 'Parent'], ['email', 'Email'], ['mobile', 'Mobile'], ['players', 'Players'],
+    const head = [['act', 'Action'], ['no', 'Invoice No'], ['parent', 'Parent'], ['email', 'Email'], ['mobile', 'Mobile'], ['pno', 'Player No'], ['players', 'Player Name'],
       ...(wide ? [['pcount', 'Players Count']] : []), ['sub', 'Subscription Details'], ['loc', 'Location'],
       ['tot', 'Total incl. VAT'], ...(wide ? [['totx', 'Total excl. VAT'], ['vat', 'VAT Amount'], ['refund', 'Partial Refund incl. VAT'], ['rreason', 'Partial Refund Reason'],
         ['wo', 'Write Off incl. VAT'], ['wreason', 'Write Off Reason']] : []),
@@ -3803,7 +3814,8 @@ async function loadInvoices() {
         <td>${invLink(i)}</td>
         <td title="${esc(i.parent.name)}">${esc(i.parent.name)} <span class="ref">${esc(i.parent.ref)}</span></td>
         <td title="${esc(i.parent.email || '')}">${esc(i.parent.email || '—')}</td><td>${esc(fmtPhone(i.parent.mobile))}</td>
-        <td>${(i.players || []).map((p) => `<a class="lnk2" data-act="openPlayer" data-a1="${p.id}">${esc(p.ref)}</a> <span class="mini">${esc(p.name)}</span>`).join('<br>') || '—'}</td>
+        <td>${(i.players || []).map((p) => `<a class="lnk2 ref" data-act="openPlayer" data-a1="${p.id}">${esc(p.ref)}</a>`).join('<br>') || '—'}</td>
+        <td>${(i.players || []).map((p) => esc(p.name)).join('<br>') || '—'}</td>
         ${wide ? `<td class="num">${i.playersCount}</td>` : ''}
         <td class="cm" title="${esc(i.subscription)}">${esc(i.subscription)}</td><td>${esc(i.location || '—')}</td>
         <td class="num">${f2(i.totalInclVat)}</td>

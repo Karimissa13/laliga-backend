@@ -1,6 +1,8 @@
 import {
-  Body, Controller, Delete, Get, Param, Patch, Post, Query,
+  Body, Controller, Delete, Get, Param, Patch, Post, Query, Res,
 } from '@nestjs/common';
+import { Response } from 'express';
+import { FinanceReportsService } from '../finance/finance-reports.service';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PlayersService } from './players.service';
 import { PlayerDirectoryService } from './player-directory.service';
@@ -29,6 +31,29 @@ export class PlayersController {
     // Coaches see the children, not what the family owes.
     if (!seesMoney(u)) r.data = r.data.map((x: any) => ({ ...x, payment: null }));
     return r;
+  }
+
+  /** The player list with the same filters, as an Excel (CSV) file — every matching child, not just one page. */
+  @Get('export.csv')
+  @RequirePermissions('player.view') @Audit('player.export', 'player')
+  @ApiOperation({ summary: 'Export the player list (same filters as the screen) as CSV' })
+  async exportCsv(@Query() q: PlayerFilterDto, @CurrentUser() u: AuthUser, @Res() res: Response) {
+    const money = seesMoney(u);
+    if (!money) delete (q as any).paymentStatus;
+    const r: any = await this.directory.list({ ...q, page: 1, limit: 10000 } as any);
+    const dmy = (d?: string | null) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '');
+    const csv = FinanceReportsService.toCsv(
+      ['Player No', 'Player Name', 'Date of Birth', 'Gender', 'Category', 'Level', 'Team', 'Training Days', 'Coach', 'Term Option', 'Season',
+        'Location', 'Parent No', 'Parent Name', 'Parent Email', 'Parent Mobile', ...(money ? ['Payment Status', 'Invoice No', 'Balance (AED)'] : []),
+        'Registered', 'Archived', 'Latest Comment'],
+      r.data.map((x: any) => [x.reference, x.name, dmy(x.dateOfBirth), x.gender === 'FEMALE' ? 'Female' : 'Male', x.category ?? '', x.level ?? '',
+        x.team?.name ?? '', x.days ?? '', x.coach?.name ?? '', x.term?.name ?? '', x.term?.season ?? '',
+        x.location ?? '', x.guardianReference, x.guardianName, x.guardianEmail, x.guardianMobile,
+        ...(money ? [x.payment?.label ?? '', x.payment?.invoiceNumber ?? '', x.payment?.balance == null ? '' : Number(x.payment.balance).toFixed(2)] : []),
+        dmy(x.registeredAt), x.archived ? 'Yes' : 'No', x.latestComment?.body ?? '']));
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="Players.csv"');
+    res.send(csv);
   }
 
   // Before ':id', so "birth-date-range" is never read as a player id.
