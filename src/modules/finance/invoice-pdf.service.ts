@@ -86,7 +86,7 @@ export class InvoicePdfService {
       const start = mine.map((e) => e.startDate).filter(Boolean).sort()[0];
       if (!start) continue;
       try {
-        const pr = await this.proration.forPurchase(mine.map((e) => e.term).filter(Boolean), mine.find((e) => e.team)?.team ?? null, start);
+        const pr = await this.proration.forPurchase(mine.map((e) => e.term).filter(Boolean), mine.find((e) => e.team)?.team ?? null, start, mine[0]?.sessionsPerWeek);
         if (pr) prorated.set(pid, pr);
       } catch { /* a start date that no longer fits is shown as typed, without the session count */ }
     }

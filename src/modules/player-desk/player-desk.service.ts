@@ -254,7 +254,7 @@ export class PlayerDeskService {
     }
     // A start date after the first day prorates the training fee by sessions left.
     const full = { list: base.list, incl: base.incl };
-    const proration = await this.proration.forPurchase(ctx.terms, ctx.team, ctx.startDate);
+    const proration = await this.proration.forPurchase(ctx.terms, ctx.team, ctx.startDate, base.spw);
     if (proration) {
       // Prorate the VAT-inclusive price and take the net from it, so net + VAT = the prorated price exactly.
       const incl = base.incl != null ? money(base.incl * proration.ratio) : null;

@@ -13,11 +13,11 @@ export interface Proration {
   sessionsTotal: number;
   /** sessionsLeft ÷ sessionsTotal, exact (never rounded before it multiplies a price). */
   ratio: number;
-  /** How the sessions were counted: the team's planned sessions, or its training days on the calendar. */
-  basis: 'team sessions' | 'training days' | 'days';
+  /** How the sessions were counted: the package's assigned sessions (weeks × sessions a week), or calendar days. */
+  basis: 'package sessions' | 'training days' | 'days';
 }
 
-type TermLike = { id: string; name?: string; startDate?: string | null; endDate?: string | null };
+type TermLike = { id: string; name?: string; startDate?: string | null; endDate?: string | null; weeks?: number | null };
 type TeamLike = { id: string; trainingDays?: Weekday[] | null } | null | undefined;
 
 const DOW: Record<number, Weekday> = { 0: Weekday.SUN, 1: Weekday.MON, 2: Weekday.TUE, 3: Weekday.WED, 4: Weekday.THU, 5: Weekday.FRI, 6: Weekday.SAT };
@@ -38,19 +38,33 @@ export function countByCalendar(terms: TermLike[], startDate: string, days?: Wee
 }
 
 /**
- * Prorating by sessions left (Karim, Oct 2026): a child who starts after the
- * first day pays training × sessions from the start date ÷ sessions in the
- * purchase. Sessions come from the team's season plan, so closures and
- * holidays already left out of the schedule don't count. Without a team (or a
- * plan), the team's training days on the calendar are counted instead.
+ * The sessions a package is sold for (Karim, 13 Oct 2026): each term's weeks × the
+ * sessions a week bought — Term 1 = 15 × 2 = 30, a full season = 34 × 2 = 68 for
+ * 2 a week. Public holidays and other no-training days do not reduce a package.
+ *
+ * Prorating: a child who starts after the first day pays the training fee ×
+ * sessions left ÷ sessions in the package. Sessions left are counted on the team's
+ * training days from the start date (holidays not deducted either), scaled to the
+ * package when the child buys fewer sessions a week than the team trains.
  * Kits, the league and tournaments are never prorated.
  */
+export function packageSessions(terms: TermLike[], startDate: string, days?: Weekday[] | null, sessionsPerWeek?: number | null) {
+  const cal = countByCalendar(terms, startDate, days);
+  const spw = sessionsPerWeek || days?.length || 0;
+  const assigned = spw && terms.length && terms.every((t) => Number(t.weeks) > 0)
+    ? terms.reduce((a, t) => a + Number(t.weeks) * spw, 0) : cal.total;
+  if (!cal.total || !assigned) return { total: assigned || cal.total, left: cal.left, basis: (days?.length ? 'training days' : 'days') as Proration['basis'] };
+  // The calendar matches the package (weeks × days the team trains); otherwise scale it.
+  const left = assigned === cal.total ? cal.left : Math.round((assigned * cal.left) / cal.total);
+  return { total: assigned, left, basis: (spw && terms.every((t) => Number(t.weeks) > 0) ? 'package sessions' : days?.length ? 'training days' : 'days') as Proration['basis'] };
+}
+
 @Injectable()
 export class ProrationService {
   constructor(@InjectDataSource() private readonly ds: DataSource) {}
 
   /** Null when the start date is on or before the first day — full price. */
-  async forPurchase(terms: TermLike[], team: TeamLike, startDate?: string | null): Promise<Proration | null> {
+  async forPurchase(terms: TermLike[], team: TeamLike, startDate?: string | null, sessionsPerWeek?: number | null): Promise<Proration | null> {
     if (!startDate) return null;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) throw new BadRequestException('The start date must be a date (YYYY-MM-DD).');
     const dated = terms.filter((t) => t.startDate && t.endDate)
@@ -60,23 +74,7 @@ export class ProrationService {
     if (startDate <= first) return null;
     if (startDate > last) throw new BadRequestException(`The start date is after the last day of this option (${last}).`);
 
-    let total = 0, left = 0, basis: Proration['basis'] = 'team sessions';
-    if (team?.id) {
-      const [r] = await this.ds.query(
-        `WITH r(f, t) AS (SELECT * FROM unnest($3::date[], $4::date[])),
-              s AS (SELECT (x."startsAt" AT TIME ZONE 'Asia/Dubai')::date AS d FROM sessions x
-                     WHERE x."teamId" = $1 AND x."isCancelled" = false AND x.type = 'TRAINING')
-         SELECT count(*)::int AS total, count(*) FILTER (WHERE s.d >= $2::date)::int AS "left"
-           FROM s WHERE EXISTS (SELECT 1 FROM r WHERE s.d BETWEEN r.f AND r.t)`,
-        [team.id, startDate, dated.map((t) => t.startDate), dated.map((t) => t.endDate)],
-      );
-      total = r?.total ?? 0; left = r?.left ?? 0;
-    }
-    if (!total) {
-      const c = countByCalendar(dated, startDate, team?.trainingDays);
-      total = c.total; left = c.left;
-      basis = team?.trainingDays?.length ? 'training days' : 'days';
-    }
+    const { total, left, basis } = packageSessions(dated, startDate, team?.trainingDays, sessionsPerWeek);
     if (!total) return null;
     if (!left) throw new BadRequestException('There are no sessions left from this start date.');
     return { startDate, sessionsLeft: left, sessionsTotal: total, ratio: left / total, basis };

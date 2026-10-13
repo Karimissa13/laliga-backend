@@ -4126,6 +4126,7 @@ ACT.invIssue = async (id) => {
 // ================= inventory =================
 const PROG_WORD = { LALIGA: 'LaLiga', ADSC: 'ADSC' };
 const MOVE_WORD = { OPENING: 'Opening', IN: 'In', OUT: 'Out', ADJUST: 'Stock take' };
+// LaLiga stock only (Karim, 13 Oct 2026: the ADSC option is removed from the inventory).
 let INVF = { tab: 'stock', programme: 'LALIGA', category: '', search: '', status: '' };
 let INV_ITEMS = [];
 
@@ -4140,15 +4141,14 @@ VIEWS.inventory = async () => {
   if (INVF.tab === 'kits' && !can('invoice.view')) INVF.tab = 'stock';
   $('view').innerHTML = `<div class="tabs">${[['stock', 'Stock'], ['moves', 'In & out log'], ['summary', 'By item'], ...(can('invoice.view') ? [['kits', 'Kit sales']] : [])].map(([k, t]) =>
       `<button class="tab ${INVF.tab === k ? 'on' : ''}" data-act="stkTab" data-a1="${k}">${t}</button>`).join('')}
-      <span class="seg">${[['LALIGA', 'LaLiga'], ['ADSC', 'ADSC'], ['', 'Both']].map(([k, t]) =>
-      `<button class="${INVF.programme === k ? 'on' : ''}" data-act="stkProg" data-a1="${k}">${t}</button>`).join('')}</span></div>
+      </div>
     <div id="stk-body"><div class="loading">Loading…</div></div>`;
   await ({ stock: stkStock, moves: stkMoves, summary: stkSummary, kits: stkKits })[INVF.tab]();
 };
 ACT.stkTab = (t) => { INVF.tab = t; go('inventory'); };
 // Super admin only: empty the store (every item and its history) and leave one practice item.
 ACT.stkReset = () => openDrawer('Start the inventory again', `
-  <div class="note bad">This removes <b>every item and every stock movement</b> (LaLiga and ADSC) and can't be undone. One practice item, <b>LL-TEST-M</b> with 10 pieces, is left so you can try stock in, stock out and a stock take before adding the real stock by hand.</div>
+  <div class="note bad">This removes <b>every item and every stock movement</b> and can't be undone. One practice item, <b>LL-TEST-M</b> with 10 pieces, is left so you can try stock in, stock out and a stock take before adding the real stock by hand.</div>
   <div class="frm" style="margin-top:12px"><div class="full"><label class="lbl" for="sr-confirm">Type CLEAR INVENTORY to confirm</label><input class="in" id="sr-confirm" autocomplete="off"></div></div>
   <div id="sr-err" style="margin-top:8px"></div>
   <div class="row-end"><button class="btn ghost" data-act="closeDrawer">Cancel</button><button class="btn" data-act="stkResetGo">Clear the inventory</button></div>`);
@@ -4158,7 +4158,6 @@ ACT.stkResetGo = async () => {
     closeDrawer(); toast(`Inventory cleared — ${r.removedItems} items removed, practice item LL-TEST-M kept`); go('inventory');
   } catch (e) { $('sr-err').innerHTML = `<div class="note bad">${esc(e.message)}</div>`; }
 };
-ACT.stkProg = (p) => { INVF.programme = p; go('inventory'); };
 
 async function stkStock() {
   const qs = new URLSearchParams();
@@ -4334,7 +4333,6 @@ ACT.mvSave = async () => {
 ACT.stkNew = () => {
   openDrawer('New item', `<div class="frm">
       <div class="full"><label class="lbl" for="ni-name">Item name *</label><input class="in" id="ni-name" placeholder="e.g. Puma Red Training Top"></div>
-      <div><label class="lbl" for="ni-prog">Programme</label><select class="sel" id="ni-prog">${opt('LALIGA', 'LaLiga', INVF.programme !== 'ADSC')}${opt('ADSC', 'ADSC', INVF.programme === 'ADSC')}</select></div>
       <div><label class="lbl" for="ni-cat">Category *</label><input class="in" id="ni-cat" list="cat-list" placeholder="T-shirts, Shorts, Balls…"><datalist id="cat-list">${[...new Set(INV_ITEMS.map((i) => i.category))].map((c) => `<option value="${esc(c)}">`).join('')}</datalist></div>
       <div><label class="lbl" for="ni-unit">Unit</label><select class="sel" id="ni-unit">${['Pcs', 'Set', 'Pack', 'Box', 'Pair'].map((u) => opt(u, u)).join('')}</select></div>
       <div><label class="lbl" for="ni-loc">Location / box</label><input class="in" id="ni-loc"></div>
@@ -4355,7 +4353,7 @@ ACT.stkNewGo = async () => {
       sizes.push({ size: m[1], openingQty: Number(m[2] || 0) });
     }
   } else sizes = [{ openingQty: Number($('ni-qty').value || 0) }];
-  const body = { name: $('ni-name').value.trim(), programme: $('ni-prog').value, category: $('ni-cat').value.trim(),
+  const body = { name: $('ni-name').value.trim(), programme: 'LALIGA', category: $('ni-cat').value.trim(),
     unit: $('ni-unit').value, location: $('ni-loc').value.trim() || undefined, sizes };
   if (body.name.length < 2 || body.category.length < 2) { $('ni-err').innerHTML = '<div class="note bad">Name and category are needed.</div>'; return; }
   try {

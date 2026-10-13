@@ -41,9 +41,13 @@ describe('Start date proration and the extra discount (e2e)', () => {
     const full = (await request(http).get('/api/v1/registration/quote').query(base).set(auth()).expect(200)).body;
     expect(full.proration).toBeNull();
     const q = (await request(http).get('/api/v1/registration/quote').query({ ...base, startDate: '2026-10-12' }).set(auth()).expect(200)).body;
-    expect(q.proration.basis).toBe('team sessions');
-    expect(q.proration.sessionsLeft).toBeGreaterThan(0);
-    expect(q.proration.sessionsLeft).toBeLessThan(q.proration.sessionsTotal);
+    // Term 1 is 15 weeks × 2 = 30 sessions (holidays don't reduce a package); from Mon 12 Oct, 12 Tue/Thu have gone.
+    expect(q.proration).toMatchObject({ basis: 'package sessions', sessionsTotal: 30, sessionsLeft: 18 });
+    // A full season at 2 a week is 68 sessions (34 weeks × 2) — LA-000008 said 66 (Karim, 13 Oct 2026).
+    const fullSeason = (await request(http).get('/api/v1/registration/quote')
+      .query({ ...base, package: 'FULL', startDate: '2026-10-13' }).set(auth()).expect(200)).body;
+    expect(fullSeason.proration).toMatchObject({ sessionsTotal: 68, sessionsLeft: 56 });
+    expect(fullSeason.listPriceInclVat).toBeCloseTo(9350 * 56 / 68, 2);   // AED 7,700.00
     expect(q.listPriceInclVat).toBeCloseTo(full.listPriceInclVat * q.proration.ratio, 1);
     expect(q.proration.fullPriceInclVat).toBeCloseTo(full.listPriceInclVat, 2);
     // On or before the first day: full price.

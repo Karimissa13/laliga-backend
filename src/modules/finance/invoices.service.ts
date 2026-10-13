@@ -201,7 +201,7 @@ export class InvoicesService {
       const name = `${e.player.firstName} ${e.player.lastName}`;
       // A start date after the first day prorates this child's training fee by sessions left.
       const starts = group.map((g) => g.startDate).filter(Boolean).sort() as string[];
-      const pr = await this.proration.forPurchase(group.map((g) => g.term).filter(Boolean), group.find((g) => g.team)?.team ?? null, starts[0]);
+      const pr = await this.proration.forPurchase(group.map((g) => g.term).filter(Boolean), group.find((g) => g.team)?.team ?? null, starts[0], group[0]?.sessionsPerWeek);
       const prNote = pr ? ` · from ${pr.startDate.split('-').reverse().join('/')} (${pr.sessionsLeft} of ${pr.sessionsTotal} sessions)` : '';
       if (usePriceList) {
         const pkg = await this.pricing.packageFor(seasonId, group.map((g) => g.termId));
@@ -395,7 +395,7 @@ export class InvoicesService {
       const mine = enrolments.filter((e) => e.playerId === c.playerId);
       let start: string | null = null;
       if (c.startDate) {
-        const pr = await this.proration.forPurchase(mine.map((e) => e.term), mine.find((e) => e.team)?.team ?? null, c.startDate);
+        const pr = await this.proration.forPurchase(mine.map((e) => e.term), mine.find((e) => e.team)?.team ?? null, c.startDate, mine[0]?.sessionsPerWeek);
         start = pr ? pr.startDate : null;
       }
       for (const e of mine) await this.enrolments.update(e.id, { startDate: start });
@@ -482,7 +482,7 @@ export class InvoicesService {
       const man = disc.find((d) => !d.wasAutomatic) ?? null;
       const start = mine.map((e) => e.startDate).filter(Boolean).sort()[0] ?? null;
       let proration: Proration | null = null;
-      try { proration = start ? await this.proration.forPurchase(mine.map((e) => e.term), mine.find((e) => e.team)?.team ?? null, start) : null; } catch { proration = null; }
+      try { proration = start ? await this.proration.forPurchase(mine.map((e) => e.term), mine.find((e) => e.team)?.team ?? null, start, mine[0]?.sessionsPerWeek) : null; } catch { proration = null; }
       const pct = man ? /(\d+(?:\.\d+)?)\s*%/.exec(man.label || '') : null;
       children.push({
         playerId: pid, name: `${mine[0].player.firstName} ${mine[0].player.lastName}`, reference: mine[0].player.reference,

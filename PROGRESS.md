@@ -437,3 +437,16 @@ Karim (12 Oct): a family with wallet credit can pay any invoice with it (season 
   - Refund, overpayment and sibling credits come from an invoice and are corrected there.
 - [x] Migration `WalletLinks1791834164432` (additive, nullable): wallet entries get kind / invoice / payment / author / cancellation; payments get `reversalOfId`. Existing entries are labelled from their wording; live has one (a test credit of AED 123,345 "retunred", which can now be cancelled).
 - [x] **Tests:** 122 unit + 166 e2e (new `wallet.e2e-spec.ts`: trip, league and instalment paid from the wallet; over-wallet, over-owed and paid-invoice refusals; concurrent payments; the Wallet method; take back; cancel; refund credit protected; coach refused).
+
+## ✅ Completed — Sessions per package; white background; inventory without ADSC — 13 Oct 2026
+
+Karim (13 Oct): LA-000008 (U8, full season, 2 a week) said 66 sessions; a full season is 68.
+
+- [x] **Cause:** prices were prorated on the team's *planned* sessions, which leave out the no-training days (one in Term 1, one in Term 3): 29 + 18 + 19 = 66 instead of 30 + 18 + 20 = 68.
+- [x] **Rule now (all calculations):** a package is sold for **term weeks × sessions a week**: Term 1 15 × 2 = 30, Term 2 9 × 2 = 18, Term 3 10 × 2 = 20, full season 34 × 2 = 68 (3 a week: 102; 1 a week: 34). Holidays don't reduce a package.
+  - Sessions left from a start date are counted on the team's training days, holidays not deducted either; they are scaled to the package when the child buys fewer sessions a week than the team trains (1 a week on a Tue/Thu team: 28 of 34 left from 13 Oct).
+  - The same rule is used by registration, Add term, adjusting an unpaid invoice, squad moves (both teams) and the invoice PDF. Example: full season from 13 Oct = 9,350 × 56/68 = **AED 7,700.00** (was 7,650.17).
+- [x] **Live invoices priced on the old count** (records — not changed): LA-000001, -002, -003, -006, -008 (prorated full seasons) and the move-ups LA-000004, -005. Unpaid ones without a squad move can be re-priced with "Adjust"; the others are test invoices.
+- [x] **White background:** the admin always uses the light theme, whatever the computer's dark-mode setting. The sidebar stays dark, as in the old admin.
+- [x] **Inventory:** the LaLiga / ADSC / Both switch and the ADSC choice on new items are removed — LaLiga stock only. Live had no ADSC stock.
+- [x] **Tests:** 126 unit + 166 e2e (68 for a full season, 56 of 68 from 13 Oct, Term 1 = 30 / 18 left from 12 Oct, 3 a week = 102, 1 a week = 34).

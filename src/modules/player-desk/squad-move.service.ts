@@ -175,12 +175,12 @@ export class SquadMoveService {
         // Two calendars: the new team's sessions left from the move date, and the old team's
         // sessions not yet trained (from the move date, or the child's own start if later).
         const optionTerms = sortedAll.map((e) => e.term);
-        const pr = await this.proration.forPurchase(optionTerms, toTeam, moveDate);
+        const pr = await this.proration.forPurchase(optionTerms, toTeam, moveDate, toSessions);
         g.ratio = pr ? pr.ratio : 1;
         g.sessionsLeft = pr?.sessionsLeft ?? null; g.sessionsTotal = pr?.sessionsTotal ?? null;
         const childStart = sortedAll.map((e) => e.startDate).filter(Boolean).sort()[0] as string | undefined;
         const oldFrom = childStart && childStart > moveDate ? childStart : moveDate;
-        const opr = await this.proration.forPurchase(optionTerms, first.team ?? null, oldFrom).catch(() => null);
+        const opr = await this.proration.forPurchase(optionTerms, first.team ?? null, oldFrom, fromSessions).catch(() => null);
         g.oldRatio = opr ? opr.ratio : 1;
         g.oldSessionsLeft = opr?.sessionsLeft ?? null; g.oldSessionsTotal = opr?.sessionsTotal ?? null;
         // The child's discount on the term invoice (sibling or manual — they never stack).
