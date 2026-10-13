@@ -891,9 +891,9 @@ function renderPlayer() {
   const actions = [];
   if (can('player.edit')) actions.push(act('pEdit', '✎', 'Edit user', 'Child and parent details'));
   if (can('registration.create') && can('invoice.create')) {
-    actions.push(act('pAddTerm', '+', 'Add term and generate invoice', d.currentTerm ? `Current: ${esc(d.currentTerm.name)}` : 'Not enrolled yet'));
+    actions.push(act('pAddTerm', '+', 'User term — register a package', `${d.currentTerm ? `Current: ${esc(d.currentTerm.name)} · ` : ''}term option, 1×, 2× or 3× a week, then the invoice`));
   }
-  if (can('invoice.create')) actions.push(act('pItems', '◆', 'User term — add items', 'Kits, league or another charge'));
+  if (can('invoice.create')) actions.push(act('pItems', '◆', 'Add items', 'Kits, league, cups or another charge'));
   if (can('team.edit') && can('invoice.create') && !archived) actions.push(act('pMove', '⇧', 'Move to another team', 'Squad move-up — prices the difference'));
   if (can('wallet.view')) actions.push(act('pWallet', '◈', 'Wallet', money(g.wallet.balance)));
   if (can('guardian.manage')) actions.push(act('pSendLogin', '✉', 'Send sign-in details', `Parent portal · ${esc(g.email)}`));
@@ -971,7 +971,7 @@ function renderPlayer() {
 
       <div class="split">
         <div class="card" style="padding:14px 16px"><h3 style="font-size:14px;margin-bottom:10px">Terms and teams</h3>
-          <div class="tl">${(d.purchases || []).map((pu) => `<div class="ev"><b>${esc(pu.label)} · ${esc(pu.team || 'no team')}</b>
+          <div class="tl">${(d.purchases || []).map((pu, pi) => `<div class="ev"><b>${esc(pu.label)} · ${esc(pu.team || 'no team')}</b>${['ACTIVE', 'PENDING'].includes(pu.status) && can('invoice.edit') && can('player.edit') && !d.player.archivedAt ? ` <button class="lnk" data-act="pCancelTerm" data-a1="${pi}" style="float:right">Cancel term</button>` : ''}
             ${pu.terms.length > 1 ? `<div class="mini" style="margin:2px 0">${pu.terms.map((t) => `${esc(t.name)}${t.status !== pu.status ? ' ' + statusPill(t.status) : ''}`).join(' · ')}</div>` : ''}
             <span>${esc(pu.season || '')}${pu.sessionsPerWeek ? ` · ${pu.sessionsPerWeek} session${pu.sessionsPerWeek === 1 ? '' : 's'} a week` : ''} — ${statusPill(pu.status)} ${dt(pu.enrolledAt)}</span></div>`).join('') || '<div class="mini">Not enrolled in any term yet.</div>'}</div>
         </div>
@@ -1071,7 +1071,7 @@ ACT.pAddTerm = async () => {
   const d = PLAYER;
   if (d.player.archivedAt) return toast('Restore this child before adding a term');
   ATP = newPurchase();
-  openDrawer('Add term and generate invoice', `
+  openDrawer('User term — register a package', `
     <div class="frm">
       <div class="full"><label class="lbl" for="at-team">Team</label><select class="sel" id="at-team"></select>
         <label class="chk" style="margin-top:7px"><input type="checkbox" id="at-all"> Show teams outside ${esc(d.category.code || 'their category')} (playing up or down)</label></div>
@@ -1216,6 +1216,51 @@ function readManualDiscount(errEl, st) {
   return { ok: true, value: manualBody(m) };
 }
 
+/**
+ * Cancel a term from the player page (Karim, 13 Oct 2026): its invoice is cancelled with it
+ * (credit note if issued), then either register another package or archive the child.
+ */
+ACT.pCancelTerm = async (idx) => {
+  const d = PLAYER, pu = (d.purchases || [])[Number(idx)]; if (!pu) return;
+  let inv = null;
+  if (pu.invoiceId) { try { inv = await api(`/invoices/${pu.invoiceId}`); } catch (e) { return toast(e.message); } }
+  const others = inv ? [...new Set((inv.lineItems || []).filter((l) => l.player && l.player.id !== d.player.id).map((l) => `${l.player.firstName} ${l.player.lastName}`))] : [];
+  const kept = inv ? Number(inv.amountPaid) - Number(inv.amountRefunded) : 0;
+  const otherLive = (d.purchases || []).filter((x, i) => i !== Number(idx) && ['ACTIVE', 'PENDING'].includes(x.status)).length;
+  const block = others.length
+    ? `<div class="note bad">${esc(inv.number)} also covers <b>${esc(others.join(', '))}</b>. Cancelling it would cancel their terms too — if that is intended, cancel it from the invoice (it will list each child).</div>
+       <div class="row-end"><button class="btn ghost" data-act="showInvoice" data-a1="${inv.id}">Open ${esc(inv.number)}</button></div>`
+    : kept > 0.005
+      ? `<div class="note bad"><b>${money(kept)}</b> has been paid on ${esc(inv.number)}. Refund it first — into the family wallet or back to the family (a credit note is issued) — then cancel the term.</div>
+         <div class="row-end"><button class="btn ghost" data-act="showInvoice" data-a1="${inv.id}">Open ${esc(inv.number)} to refund</button></div>`
+      : '';
+  openDrawer(`Cancel ${pu.label} — ${d.player.name}`, `
+    <dl class="kv"><dt>Package</dt><dd>${esc(pu.label)} · ${esc(pu.season || '')}${pu.sessionsPerWeek ? ` · ${pu.sessionsPerWeek}× a week` : ''}</dd>
+      <dt>Team</dt><dd>${esc(pu.team || '—')}</dd><dt>Terms</dt><dd>${esc(pu.termsText || '')}</dd>
+      <dt>Invoice</dt><dd>${inv ? `<a class="lnk ref" data-act="showInvoice" data-a1="${inv.id}">${esc(inv.number)}</a> · ${invStatusPill(inv)} · ${money(inv.total)}` : '<span class="mini">not invoiced</span>'}</dd></dl>
+    ${block || `<div class="frm" style="margin-top:12px">
+      <div class="full"><label class="lbl" for="ct-rsn">Reason</label><input class="in" id="ct-rsn" maxlength="250" placeholder="e.g. Family changed to Term 1 only"></div>
+      <div class="full"><span class="lbl">Afterwards</span>
+        <label class="chk"><input type="radio" name="ct-next" value="rebook" checked> Register another package for ${esc(d.player.firstName)} now</label>
+        <label class="chk"><input type="radio" name="ct-next" value="archive" ${otherLive ? 'disabled' : ''}> No other term — archive ${esc(d.player.firstName)} (hidden from the lists; can be restored)${otherLive ? ' <span class="mini">— has another live term</span>' : ''}</label>
+        <label class="chk"><input type="radio" name="ct-next" value="none"> Nothing for now</label></div></div>
+      ${inv && inv.status !== 'DRAFT' ? '<div class="note info" style="margin-top:8px">The invoice is cancelled and stays on record, with a tax credit note for the full amount.</div>' : ''}
+      <div id="ct-err" style="margin-top:8px"></div>
+      <div class="row-end"><button class="btn ghost" data-act="closeDrawer">Keep it</button><button class="btn" id="ct-go" data-act="pCancelTermGo" data-a1="${idx}">Cancel term${inv ? ' and invoice' : ''}</button></div>`}`, true);
+};
+ACT.pCancelTermGo = async (idx) => {
+  const d = PLAYER, pu = d.purchases[Number(idx)], reason = $('ct-rsn').value.trim();
+  const next = document.querySelector('input[name="ct-next"]:checked')?.value || 'none';
+  if (reason.length < 3) { $('ct-err').innerHTML = '<div class="note bad">Give a reason.</div>'; return; }
+  const go = $('ct-go'); go.disabled = true;
+  try {
+    const body = pu.invoiceId ? { invoiceId: pu.invoiceId, reason, archive: next === 'archive' } : { enrolmentIds: pu.terms.map((t) => t.enrolmentId), reason, archive: next === 'archive' };
+    const r = await api(`/players/${d.player.id}/terms/cancel`, { method: 'POST', body: JSON.stringify(body) });
+    toast(`${pu.label} cancelled${r.archived ? ` — ${d.player.firstName} archived` : ''}`);
+    closeDrawer(); await reloadPlayer();
+    if (next === 'rebook') ACT.pAddTerm();
+  } catch (e) { $('ct-err').innerHTML = `<div class="note bad">${esc(e.message)}</div>`; go.disabled = false; }
+};
 ACT.pAddTermGo = async () => {
   const errEl = $('at-err'); errEl.innerHTML = '';
   const manual = readManualDiscount(errEl); if (!manual.ok) return;
@@ -4000,7 +4045,7 @@ window.showInvoice = async (id) => {
           <div><label class="lbl" for="rf-rsn">Reason</label><input class="in" id="rf-rsn" placeholder="Why — kept on the invoice"></div>
           <div class="full"><label class="chk"><input type="checkbox" id="rf-wal"> Credit the family wallet instead of paying it back</label> <button class="btn sm ghost" data-act="invRefund" data-a1="${i.id}">Refund</button>
             <div class="mini">A tax credit note is issued for every refund.</div></div>` : ''}
-          ${can('invoice.edit') && Number(i.amountPaid) <= 0.005 && i.status !== 'CANCELLED' ? `<div class="full" id="cx-box"><button class="btn sm ghost" data-act="invCancel" data-a1="${i.id}">Cancel invoice</button> <span class="mini">Only before any payment; it stays on record as cancelled${i.status !== 'DRAFT' ? ', with a tax credit note for the full amount' : ''}.</span></div>` : ''}
+          ${can('invoice.edit') && Number(i.amountPaid) - Number(i.amountRefunded) <= 0.005 && i.status !== 'CANCELLED' ? `<div class="full" id="cx-box"><button class="btn sm ghost" data-act="invCancel" data-a1="${i.id}">Cancel invoice</button> <span class="mini">Only when nothing paid is kept (refund first); the terms it bought are cancelled with it; it stays on record as cancelled${i.status !== 'DRAFT' ? ', with a tax credit note' : ''}.</span></div>` : ''}
         </div></details>` : ''}`);
     loadInvTraining(i.id);
     loadInvPlan(i.id);
@@ -4107,7 +4152,19 @@ ACT.invRefund = async (id) => {
 };
 ACT.invCancel = async (id, sure) => {
   if (!sure) { $('cx-box').innerHTML = `<button class="btn sm" data-act="invCancel" data-a1="${id}" data-a2="yes">Yes, cancel this invoice</button> <a class="lnk2" data-act="showInvoice" data-a1="${id}">Keep it</a>`; return; }
-  try { const r = await api(`/invoices/${id}/cancel`, { method: 'POST', body: '{}' }); cnDone('Invoice cancelled', r); window.showInvoice(id); invKeep(id); }
+  try {
+    const r = await api(`/invoices/${id}/cancel`, { method: 'POST', body: '{}' });
+    cnDone(`Invoice cancelled${r.termsCancelled ? ` — ${r.termsCancelled} term${r.termsCancelled === 1 ? '' : 's'} cancelled with it` : ''}`, r);
+    // A child left with no term: archive now (they disappear from the lists; restorable)?
+    for (const c of (r.children || []).filter((x) => !x.termsLeft && !x.archived)) {
+      if (can('player.delete') && confirm(`${c.name} (${c.reference}) has no term left. Archive ${c.name} now? They disappear from the lists and can be restored later.`)) {
+        try { await api(`/players/${c.id}/archive`, { method: 'POST', body: JSON.stringify({ reason: `No term registered — invoice ${r.number} cancelled` }) }); toast(`${c.name} archived`); }
+        catch (e) { toast(e.message); }
+      }
+    }
+    window.showInvoice(id); invKeep(id);
+    if (PLAYER && SCREEN.k === 'player') reloadPlayer();
+  }
   catch (e) { toast(e.message); }
 };
 

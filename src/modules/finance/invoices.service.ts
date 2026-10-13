@@ -3,7 +3,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, DataSource, In, IsNull, Not, Repository } from 'typeorm';
 import {
-  AppliedDiscount, DiscountRule, Enrolment, Fee, Guardian, Invoice, InvoiceLineItem,
+  AppliedDiscount, DiscountRule, Enrolment, EnrolmentStatus, Fee, Guardian, Invoice, InvoiceLineItem,
   InvoiceStatus, InvoiceType, Payment, PaymentDirection, PaymentStatus, Player, Term,
   Product, RevenueStream, TermPackage, InvoiceInstalment,
 } from '../../database/entities';
@@ -607,19 +607,41 @@ export class InvoicesService {
   }
 
   /** Cancel before any payment. An issued (tax) invoice is credited in full by a credit note; a draft needs none. */
+  /**
+   * Cancel an invoice — and the terms it bought (Karim, 13 Oct 2026): its enrolments are
+   * cancelled with it, so the child no longer shows as enrolled in that package and a
+   * new package can be registered. Allowed while no money is kept on it (nothing paid,
+   * or everything paid was refunded). The response lists each child and how many live
+   * terms they have left, so the desk can archive a child with none.
+   */
   async cancel(id: string, actorId?: string) {
     const inv = await this.findOne(id);
-    if (Number(inv.amountPaid) > 0) throw new BadRequestException('Cannot cancel an invoice with payments — refund first');
     if (inv.status === InvoiceStatus.CANCELLED) throw new BadRequestException('This invoice is already cancelled');
+    const kept = money(Number(inv.amountPaid) - Number(inv.amountRefunded));
+    if (kept > 0.005) throw new BadRequestException(`AED ${kept.toFixed(2)} has been paid on ${inv.number} — refund it first (to the wallet or back to the family), then cancel.`);
+    const openMoveUp = await this.invoices.findOne({ where: { relatedInvoiceId: id, purpose: 'MOVE_UP', status: Not(InvoiceStatus.CANCELLED) } });
+    if (openMoveUp) throw new BadRequestException(`Cancel the squad move-up invoice ${openMoveUp.number} first.`);
     const wasIssued = inv.status !== InvoiceStatus.DRAFT;
     await this.invoices.update(id, { status: InvoiceStatus.CANCELLED });
+    // The terms this invoice bought are cancelled with it (history kept: status CANCELLED, never deleted).
+    const bought = await this.enrolments.find({ where: { invoiceId: id, status: In([EnrolmentStatus.ACTIVE, EnrolmentStatus.PENDING]) } });
+    if (bought.length) await this.enrolments.update(bought.map((e) => e.id), { status: EnrolmentStatus.CANCELLED });
     // Credit what hasn't been credited yet, so all credit notes together never exceed the invoice.
     const credited = (await this.creditNotes.forInvoice(id)).reduce((s, n) => s + Number(n.total), 0);
     const open = money(Number(inv.total) - credited);
     const creditNote = wasIssued
       ? await this.creditNotes.issue({ invoiceId: id, kind: CreditNoteKind.CANCELLATION, amount: open, reason: 'Invoice cancelled', actorId })
       : null;
-    return { ...(await this.findOne(id)), creditNote };
+    // Each child on the invoice, and the live terms they still have.
+    const childIds = [...new Set([...(inv.lineItems || []).map((l) => l.playerId), ...bought.map((e) => e.playerId)].filter(Boolean))] as string[];
+    const children: Array<{ id: string; name: string; reference: string; termsLeft: number; archived: boolean }> = [];
+    for (const pid of childIds) {
+      const p = await this.players.findOne({ where: { id: pid } });
+      if (!p) continue;
+      const termsLeft = await this.enrolments.count({ where: { playerId: pid, status: In([EnrolmentStatus.ACTIVE, EnrolmentStatus.PENDING]) } });
+      children.push({ id: pid, name: `${p.firstName} ${p.lastName}`, reference: p.reference, termsLeft, archived: !!p.archivedAt });
+    }
+    return { ...(await this.findOne(id)), creditNote, termsCancelled: bought.length, children };
   }
 
   // -------------------------------------------------------------- reporting

@@ -87,6 +87,14 @@ export class RegistrationOptionsDto {
   @ApiPropertyOptional({ enum: TeamLevel }) @IsOptional() @IsEnum(TeamLevel) level?: TeamLevel;
 }
 
+/** Cancel a term from the player page: its invoice (if any) is cancelled with it. */
+export class CancelTermDto {
+  @ApiPropertyOptional({ description: 'The invoice that bought the term (cancelled with it)' }) @IsOptional() @IsUUID() invoiceId?: string;
+  @ApiPropertyOptional({ description: 'Terms that were never invoiced' }) @IsOptional() @IsArray() @ArrayMaxSize(10) @IsUUID('all', { each: true }) enrolmentIds?: string[];
+  @ApiProperty({ example: 'Family chose Term 1 only' }) @IsString() @MinLength(3) @MaxLength(250) reason: string;
+  @ApiPropertyOptional({ description: 'Archive the child when no term is left' }) @IsOptional() @IsBoolean() archive?: boolean;
+}
+
 export class AddItemsDto {
   @ApiProperty({ type: [ExtraItemDto] }) @IsArray() @ArrayMinSize(1) @ArrayMaxSize(20)
   @ValidateNested({ each: true }) @Type(() => ExtraItemDto) items: ExtraItemDto[];

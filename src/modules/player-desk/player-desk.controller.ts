@@ -1,9 +1,9 @@
 import { seesMoney } from '../../common/money-visibility';
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PlayerDeskService } from './player-desk.service';
 import {
-  AddItemsDto, AddTermDto, AssignCoachDto, EligibleTeamsQueryDto, FamilyQuoteDto, FamilyTermsDto, GuardianLookupDto, OptionalReasonDto,
+  AddItemsDto, AddTermDto, CancelTermDto, AssignCoachDto, EligibleTeamsQueryDto, FamilyQuoteDto, FamilyTermsDto, GuardianLookupDto, OptionalReasonDto,
   NewChildQuoteDto, PlacementQueryDto, QuoteQueryDto, ReasonDto, RegistrationOptionsDto,
 } from './dto/player-desk.dto';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
@@ -41,6 +41,12 @@ export class PlayerDeskController {
   @ApiOperation({ summary: '"User term": add kits, a league or another item to a registered child, with its own invoice' })
   addItems(@Param('id') id: string, @Body() dto: AddItemsDto, @CurrentUser() user: AuthUser) {
     return this.desk.addItems(id, dto, user?.id);
+  }
+
+  @Post('players/:id/terms/cancel') @RequirePermissions('invoice.edit', 'player.edit') @Audit('player.cancel_term', 'player')
+  @ApiOperation({ summary: 'Cancel a term (and the invoice that bought it); optionally archive the child when no term is left' })
+  cancelTerm(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CancelTermDto, @CurrentUser() user: AuthUser) {
+    return this.desk.cancelTerm(id, dto, user?.id);
   }
 
   @Post('players/:id/archive') @RequirePermissions('player.delete') @Audit('player.archive', 'player')

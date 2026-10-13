@@ -624,6 +624,52 @@ export class PlayerDeskService {
   // ---------------------------------------------------------------- archive
 
   /**
+   * Cancel a term the child bought (Karim, 13 Oct 2026) — from the player page. With its
+   * invoice: the invoice is cancelled (credit note if it was issued) and so are the terms
+   * on it; refused if money is kept on it (refund first) or if it also covers a sibling
+   * (cancel it from Invoices then, knowingly). Without an invoice: the enrolments only.
+   * Afterwards the desk either registers another package, or — with no term left —
+   * archives the child (`archive`), who then disappears from the lists (restorable).
+   */
+  async cancelTerm(playerId: string, input: { invoiceId?: string; enrolmentIds?: string[]; reason: string; archive?: boolean }, actorId?: string) {
+    const p = await this.players.findOne({ where: { id: playerId } });
+    if (!p) throw new NotFoundException('Player not found');
+    const reason = (input.reason || '').trim();
+    if (reason.length < 3) throw new BadRequestException('Give a reason (at least 3 characters).');
+    let what = '';
+    if (input.invoiceId) {
+      const inv = await this.invoicing.findOne(input.invoiceId);
+      if (inv.guardianId !== p.guardianId) throw new BadRequestException('That invoice belongs to another family.');
+      const others = [...new Set((inv.lineItems || []).filter((l) => l.playerId && l.playerId !== playerId)
+        .map((l) => (l.player ? `${l.player.firstName} ${l.player.lastName}` : 'another child')))];
+      if (others.length) {
+        throw new BadRequestException(`${inv.number} also covers ${others.join(', ')} — cancelling it would cancel their terms too. If that is intended, cancel it from Invoices.`);
+      }
+      const r = await this.invoicing.cancel(inv.id, actorId);
+      what = `invoice ${inv.number} cancelled${r.creditNote ? ` (credit note ${r.creditNote.number})` : ''}`;
+    } else {
+      const ids = input.enrolmentIds || [];
+      if (!ids.length) throw new BadRequestException('Choose the term to cancel.');
+      const rows = await this.enrolments.find({ where: { id: In(ids), playerId }, relations: { term: true } });
+      if (rows.length !== ids.length) throw new BadRequestException('That term is not this child\'s.');
+      if (rows.some((e) => e.invoiceId)) throw new BadRequestException('This term is invoiced — cancel it with its invoice.');
+      const live = rows.filter((e) => [EnrolmentStatus.ACTIVE, EnrolmentStatus.PENDING].includes(e.status));
+      if (!live.length) throw new BadRequestException('This term is already cancelled.');
+      await this.enrolments.update(live.map((e) => e.id), { status: EnrolmentStatus.CANCELLED });
+      what = live.map((e) => e.term?.name).filter(Boolean).join(', ') + ' (not invoiced)';
+    }
+    const termsLeft = await this.enrolments.count({ where: { playerId, status: In([EnrolmentStatus.ACTIVE, EnrolmentStatus.PENDING]) } });
+    await this.playersSvc.addComment(playerId, `Term cancelled — ${what}. ${reason}`, actorId);
+    let archived = false;
+    if (input.archive) {
+      if (termsLeft) throw new BadRequestException(`Cancelled — but ${p.firstName} still has ${termsLeft} term${termsLeft === 1 ? '' : 's'}, so they were not archived.`);
+      await this.archive(playerId, `No term registered — ${reason}`, actorId);
+      archived = true;
+    }
+    return { playerId, cancelled: what, termsLeft, archived };
+  }
+
+  /**
    * "Delete" at the desk archives: the child disappears from lists and can't be
    * invoiced, but every invoice, payment and attendance record stays intact.
    */

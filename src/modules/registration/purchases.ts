@@ -78,10 +78,14 @@ export function summarisePurchases(enrols: EnrolmentLike[], today = dubaiToday()
   return out.sort((a, b) => b.enrolledAt.localeCompare(a.enrolledAt) || (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9));
 }
 
-/** The purchase that describes the child now: a live one covering today or later, else the newest. */
+/**
+ * The purchase that describes the child now: a live one covering today or later, else the
+ * newest live one. A cancelled purchase never counts — a child whose only package was
+ * cancelled has no current term (Karim, 13 Oct 2026).
+ */
 export function currentPurchase(ps: Purchase[], today = dubaiToday()): Purchase | null {
   const live = ps.filter((p) => p.status !== 'CANCELLED' && p.status !== 'TRANSFERRED');
   const covering = live.filter((p) => p.terms.some((t) => !t.endDate || t.endDate >= today));
   return covering.sort((a, b) => String(a.terms[0]?.startDate ?? '').localeCompare(String(b.terms[0]?.startDate ?? '')))[0]
-    ?? live[0] ?? ps[0] ?? null;
+    ?? live[0] ?? null;
 }

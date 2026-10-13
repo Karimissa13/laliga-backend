@@ -458,3 +458,22 @@ Karim (13 Oct): LA-000008 (U8, full season, 2 a week) said 66 sessions; a full s
 - [x] **Trials & Leads:** the list opens on **All**, so a lead marked "Not joining" (or a no-show) stays listed; open leads stay on top; the tab and filters chosen are kept.
 - [x] **Invoices:** **Player No** and **Player Name** are separate columns (on screen and in Excel). **Subscription details** show only the package ("Full season", "Term 1", "Terms 1 & 2 + Kit", "Camp", "Salou Cup (trip)"). New filter **Term option / package** (Term 1 … Full season, Other).
 - [x] **Tests:** 126 unit + 167 e2e (players export incl. coach without money columns; invoice CSV columns; package filter).
+
+## ✅ Completed — Cancelling a term or its invoice; User term with 1× / 2× / 3× — 13 Oct 2026
+
+Karim (13 Oct): after cancelling an invoice the player page still showed the child enrolled in that package. He wants to cancel from the player page and re-issue another package; a child with no term should go to the archive. Old admin checked (read-only): each child carries a term / package and their own training days.
+
+- [x] **Cancelling an invoice cancels the terms it bought** (enrolments → CANCELLED, never deleted). The child no longer shows as enrolled and another package can be registered straight away.
+  - Allowed while no money is kept on it: nothing paid, or everything paid refunded (to the wallet or back).
+  - Refused while a linked squad move-up invoice is open.
+  - The response lists each child and their terms left; from Invoices the desk is asked whether to archive a child left with none.
+- [x] **Fixed:** a child whose only package was cancelled still had it as "current term" (the profile fell back to the newest purchase even if cancelled).
+- [x] **Player page → Terms and teams → "Cancel term"** on each live package. It shows the package, team, terms and invoice, then three choices afterwards:
+  - register another package now (opens User term);
+  - no other term — archive the child (hidden from the lists, restorable);
+  - nothing.
+  - A reason is required and written to the child's history.
+  - Refused, with a pointer to the invoice: a family invoice that also covers a sibling (cancel it from Invoices, knowingly), and an invoice with money kept (refund first).
+- [x] **Live data:** LA-000008 was cancelled before this release with its 3 enrolments still live; migration `CancelTermsOfCancelledInvoices1791900000000` applies the same rule to invoices cancelled earlier (statuses only).
+- [x] **User term:** the player actions are renamed — **"User term — register a package"** (term option, 1×, 2× or 3× a week — the price list decides which are offered — then the invoice) and **"Add items"** (kits, league, cups).
+- [x] **Tests:** 126 unit + 170 e2e (cancel → no current term → re-register at 1× a week; cancel from the player page + archive; sibling and paid refusals; full refund then cancel).

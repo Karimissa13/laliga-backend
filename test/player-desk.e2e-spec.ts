@@ -203,6 +203,70 @@ describe('Players section (e2e)', () => {
     });
   });
 
+  describe('cancelling a term or its invoice (Karim, 13 Oct 2026)', () => {
+    const mk = async (tag: string, kids: string[]) => {
+      const g = (await request(http).post('/api/v1/guardians').set(auth()).send({
+        fullName: `Cancel ${tag} ${uniq}`, email: `cancel.${tag.toLowerCase()}${uniq}@example.com`, mobile: `+97158${String(uniq + tag.length).slice(-7)}`,
+      }).expect(201)).body;
+      const ps: any[] = [];
+      for (const k of kids) {
+        ps.push((await request(http).post('/api/v1/players').set(auth()).send({ guardianId: g.id, firstName: k, lastName: `Can${uniq}`, gender: 'MALE', dateOfBirth: '2015-03-01', sendWelcome: false }).expect(201)).body);
+      }
+      return { g, ps };
+    };
+    const profile = async (id: string) => (await request(http).get(`/api/v1/players/${id}/profile`).set(auth()).expect(200)).body;
+
+    it('cancelling an invoice cancels the terms it bought; another package can then be registered', async () => {
+      const { ps: [p] } = await mk('Inv', ['Rayan']);
+      const inv = (await request(http).post(`/api/v1/players/${p.id}/terms`).set(auth()).send({ package: 'FULL', sessionsPerWeek: 2, teamId: team('U12 Development').id }).expect(201)).body.invoice;
+      expect((await profile(p.id)).currentTerm.name).toBe('Full season');
+      const r = (await request(http).post(`/api/v1/invoices/${inv.id}/cancel`).set(auth()).send({}).expect(201)).body;
+      expect(r.termsCancelled).toBe(3);
+      expect(r.children).toEqual([expect.objectContaining({ id: p.id, termsLeft: 0, archived: false })]);
+      const after = await profile(p.id);
+      expect(after.currentTerm).toBeNull();                                      // no longer shows as enrolled
+      // Re-issue with another package (1 a week this time).
+      const again = (await request(http).post(`/api/v1/players/${p.id}/terms`).set(auth()).send({ package: 'T1', sessionsPerWeek: 1, teamId: team('U12 Development').id }).expect(201)).body;
+      expect(again.invoice.status).toBe('ISSUED');
+      const now = await profile(p.id);
+      expect(now.currentTerm).toMatchObject({ name: 'Term 1', sessionsPerWeek: 1 });
+    });
+
+    it('cancels a term from the player page and archives the child with no term left', async () => {
+      const { ps: [p] } = await mk('Arch', ['Zayd']);
+      const inv = (await request(http).post(`/api/v1/players/${p.id}/terms`).set(auth()).send({ package: 'T1', sessionsPerWeek: 2, teamId: team('U12 Development').id }).expect(201)).body.invoice;
+      await request(http).post(`/api/v1/players/${p.id}/terms/cancel`).set(auth()).send({ invoiceId: inv.id, reason: 'x' }).expect(400);   // reason required
+      const r = (await request(http).post(`/api/v1/players/${p.id}/terms/cancel`).set(auth()).send({ invoiceId: inv.id, reason: 'Family moved away', archive: true }).expect(201)).body;
+      expect(r).toMatchObject({ termsLeft: 0, archived: true });
+      expect((await request(http).get(`/api/v1/invoices/${inv.id}`).set(auth())).body.status).toBe('CANCELLED');
+      const list = (await request(http).get(`/api/v1/players?playerRef=${encodeURIComponent(p.reference)}`).set(auth())).body;
+      expect(list.data).toHaveLength(0);                                          // gone from the list (archived)
+      const prof = await profile(p.id);
+      expect(prof.comments.some((c: any) => /Term cancelled — invoice .* cancelled/.test(c.body))).toBe(true);
+    });
+
+    it('refuses a shared family invoice and one with money kept; a full refund then allows it', async () => {
+      const { g, ps: [a, b] } = await mk('Fam', ['Older', 'Younger']);
+      const fam = (await request(http).post(`/api/v1/guardians/${g.id}/terms`).set(auth()).send({
+        items: [
+          { playerId: a.id, package: 'T1', sessionsPerWeek: 2, teamId: team('U12 Development').id },
+          { playerId: b.id, package: 'T1', sessionsPerWeek: 2, teamId: team('U12 Development').id },
+        ],
+      }).expect(201)).body;
+      const famInvoice = fam.invoice ?? fam.invoices?.[0];
+      const shared = await request(http).post(`/api/v1/players/${a.id}/terms/cancel`).set(auth()).send({ invoiceId: famInvoice.id, reason: 'Change' }).expect(400);
+      expect(shared.body.message).toMatch(/also covers Younger/);
+      const { ps: [c] } = await mk('Paid', ['Hadi']);
+      const inv = (await request(http).post(`/api/v1/players/${c.id}/terms`).set(auth()).send({ package: 'T1', sessionsPerWeek: 2, teamId: team('U12 Development').id }).expect(201)).body.invoice;
+      await request(http).post(`/api/v1/invoices/${inv.id}/payments`).set(auth()).send({ amount: 500, method: 'CASH' }).expect(201);
+      const paid = await request(http).post(`/api/v1/players/${c.id}/terms/cancel`).set(auth()).send({ invoiceId: inv.id, reason: 'Change' }).expect(400);
+      expect(paid.body.message).toMatch(/AED 500\.00 has been paid .* refund it first/);
+      await request(http).post(`/api/v1/invoices/${inv.id}/refund`).set(auth()).send({ amount: 500, reason: 'Changing package', toWallet: true }).expect(201);
+      await request(http).post(`/api/v1/players/${c.id}/terms/cancel`).set(auth()).send({ invoiceId: inv.id, reason: 'Changing package' }).expect(201);
+      expect((await profile(c.id)).currentTerm).toBeNull();
+    });
+  });
+
   describe('players export (Karim, 13 Oct 2026)', () => {
     it('exports every child matching the filters; coaches get no money columns', async () => {
       const list = (await request(http).get('/api/v1/players?limit=5').set(auth()).expect(200)).body;
