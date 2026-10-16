@@ -21,6 +21,7 @@ export const TERM_TYPES_SQL = (i: string) =>
 export function invoicePurpose(lines: Array<{ stream?: string | null; package?: string | null }> | null | undefined,
   purpose?: string | null, termTypes?: string[] | null): string {
   if (purpose === 'MOVE_UP') return 'Squad move-up';
+  if (purpose === 'OPENING') return 'Balance from earlier seasons';
   const parts: string[] = [];
   const add = (w: string) => { if (w && !parts.includes(w)) parts.push(w); };
   const types = new Set((termTypes || []).map(String));

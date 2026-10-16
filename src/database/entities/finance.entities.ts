@@ -54,7 +54,7 @@ export class Invoice {
   @Column({ default: false }) isSponsored: boolean;
   @Column({ type: 'int', default: 1 }) installments: number;
   @Column({ type: 'text', nullable: true }) notes?: string;
-  /** Why this invoice exists beyond a normal sale: 'MOVE_UP' = a squad move-up top-up. */
+  /** Why this invoice exists beyond a normal sale: 'MOVE_UP' = a squad move-up top-up; 'OPENING' = balance from earlier seasons (see opening-balance.ts). */
   @Column({ type: 'varchar', length: 16, nullable: true }) purpose?: string | null;
   /** The invoice this one relates to (a move-up's original term invoice). */
   @Index() @Column({ type: 'uuid', nullable: true }) relatedInvoiceId?: string | null;

@@ -504,3 +504,16 @@ The old system's developer reviewed the new one and sent a migration report (Sea
 Next for the move:
 - The importer from the MySQL dump (with the team map and the reconciliation report). It needs the dump from the old host.
 - The staff accounts and their roles.
+
+## ✅ Completed — Balance from earlier seasons; reset email approved — 16 Oct 2026
+
+- [x] **Reset email wording approved by Karim** (16 Oct): "Choose a new password — LaLiga Academy parent account", in the payment-reminder design.
+- [x] **Local Docker app rebuilt** (`docker compose up -d --build`): the image on Karim's computer was 8 days old. The local data volume is kept.
+- [x] **Balance from earlier seasons** (decision 16 Oct, for the 57 unpaid pre-Season 9 invoices of 28 current families):
+  - One per family, numbered `OB-<parent no>`, with a line per old invoice: "INVAB-1980 of 03/09/2024 — invoiced AED 3150.00, paid AED 1000.00", showing what is still owed. Old invoices with nothing owed are left out. Each line keeps the old id.
+  - It is not a new tax invoice: no VAT is added (the old invoices carried it), and the PDF is titled **STATEMENT**.
+  - It is owed money: it is in the family balance, the invoice list ("Balance from earlier seasons"), the parent portal and reminders, and can be paid or written off.
+  - It is left out of the season dashboard and the monthly "billed" chart, since it is not this season's revenue.
+  - Refused: a second one for the same family, duplicate or negative lines, and an old invoice paid more than its total (that is wallet credit — it goes to the wallet instead).
+  - Pure rule `finance/opening-balance.ts`; `writeOpeningBalance` (in the importer's transaction) in `opening-balance.service.ts`.
+- [x] **Tests:** 135 unit + 174 e2e.

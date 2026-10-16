@@ -70,6 +70,7 @@ export class InvoicePdfService {
     // ones that replaced them in a later squad move); a move-up invoice the new team's enrolments.
     const relations = { term: true, season: true, team: true, player: true } as const;
     const moveUp = inv.purpose === 'MOVE_UP';
+    const opening = inv.purpose === 'OPENING';
     const enrols = moveUp
       ? await this.enrolments.find({ where: { moveUpInvoiceId: inv.id }, relations })
       : await this.enrolments.find({ where: { invoiceId: inv.id, movedFromId: IsNull() }, relations });
@@ -91,7 +92,7 @@ export class InvoicePdfService {
       } catch { /* a start date that no longer fits is shown as typed, without the session count */ }
     }
 
-    const doc = new PDFDocument({ size: 'A4', margin: 0, bufferPages: true, info: { Title: `Tax invoice ${inv.number}`, Author: profile.companyName } });
+    const doc = new PDFDocument({ size: 'A4', margin: 0, bufferPages: true, info: { Title: `${opening ? 'Balance from earlier seasons' : 'Tax invoice'} ${inv.number}`, Author: profile.companyName } });
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
     const done = new Promise<Buffer>((res) => doc.on('end', () => res(Buffer.concat(chunks))));
@@ -99,7 +100,8 @@ export class InvoicePdfService {
     const W = 595.28, M = 40, CW = W - 2 * M;
     const col = { desc: M, qty: M + 262, unit: M + 318, total: M + 400, end: W - M };
 
-    this.header(doc, 'TAX INVOICE', W, M);
+    // A balance from earlier seasons is a statement: the old invoices were the tax invoices.
+    this.header(doc, opening ? 'STATEMENT' : 'TAX INVOICE', W, M);
 
     // ---- bill to + date/number ---------------------------------------------
     const g = inv.guardian;

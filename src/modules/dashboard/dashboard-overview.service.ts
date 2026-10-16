@@ -269,6 +269,8 @@ export class DashboardOverviewService {
                     FROM payments p WHERE p."invoiceId" = i.id AND p.status = 'COMPLETED' AND p.method <> 'WALLET'), 0) AS collected
         FROM invoices i
         WHERE i.status NOT IN ('DRAFT', 'CANCELLED')
+          -- A balance from earlier seasons is owed, but it is not this season's revenue.
+          AND COALESCE(i.purpose, '') <> 'OPENING'
           AND (EXISTS (SELECT 1 FROM enrolments e WHERE e."invoiceId" = i.id AND e."seasonId" = $1)
                OR (NOT EXISTS (SELECT 1 FROM enrolments e WHERE e."invoiceId" = i.id)
                    AND i."issueDate" BETWEEN $2::date - 90 AND $3::date + 90))

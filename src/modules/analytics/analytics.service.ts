@@ -96,6 +96,8 @@ export class AnalyticsService {
       .addSelect('SUM(i.amountPaid)', 'collected')
       .where("i.createdAt >= now() - interval '12 months'")
       .andWhere('i.status != :d', { d: InvoiceStatus.DRAFT })
+      // A balance from earlier seasons is not billed in the month it was carried over.
+      .andWhere("COALESCE(i.purpose, '') <> 'OPENING'")
       .groupBy("date_trunc('month', i.createdAt)")
       .orderBy("date_trunc('month', i.createdAt)", 'ASC')
       .getRawMany();

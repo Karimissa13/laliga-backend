@@ -27,8 +27,8 @@ npm run build
 # local DB (Docker gives one):  docker compose up      → http://localhost:3000
 DATABASE_URL=postgresql://… DB_SYNCHRONIZE=false node dist/database/migrate.js
 node dist/database/seed.js && node dist/database/seed-academy.js
-npm test                       # unit (132)
-npm run test:e2e               # e2e (172) — needs a seeded DB in DATABASE_URL
+npm test                       # unit (135)
+npm run test:e2e               # e2e (174) — needs a seeded DB in DATABASE_URL
 npm run db:migration:check     # fails if entities changed without a migration
 ```
 Test logins on a non-live DB: admin@laligaacademy.local / Admin@12345, sergio@laligaacademy.local / Coach@12345.
@@ -72,6 +72,7 @@ Run the e2e suite on a **fresh, seeded** database (some suites assume the seed's
 | Family wallet (pay invoices with credit, cancel / take back, statement "what for") | `payments.service.ts` (`payFromWallet`, `reverseWalletPayment`, `cancelWalletEntry`), `invoice-purpose.ts`; wallet entries carry kind / invoice / payment (migration `WalletLinks`) |
 | Parent "forgot password" (one-time emailed link, hashed, never logged) | `parent-portal.service.ts` (`requestReset`, `resetPassword`), `notifications/reset-email.ts`, `public/parent/parent.js` |
 | A child's own training days (1×/2× on a team that trains more often) | `player-desk/training-days.ts` (pure + `REGISTER_COUNT_SQL`), `setTrainingDays`, register filter in `attendance.service.ts` |
+| Balance from earlier seasons (one OB-<parent no> per family, statement PDF, no VAT, not season revenue) | `finance/opening-balance.ts`, `opening-balance.service.ts` (`writeOpeningBalance`, used by the importer) |
 | Old-admin traceability | `legacyId` on every imported table (migration `MigrationReadiness`); invoice search accepts INVAB- numbers |
 | Trials & date-of-birth range | `TRIAL_LEVEL`/`TRIAL_WEEKDAYS` in `leads.service.ts`; `birthDateRange` in `people/age-group.util.ts` |
 
