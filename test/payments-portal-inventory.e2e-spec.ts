@@ -190,6 +190,37 @@ describe('Payment report, invoice email, parent portal, inventory (e2e)', () => 
       const r2 = (await request(http).post('/api/v1/parent/auth/login').send({ email: g.email, password: fresh }).expect(201)).body;
       expect(r2.mustChangePassword).toBe(true);
     });
+
+    it('"Forgot password": same answer for any email; a one-time link only to the main email; the log never holds it', async () => {
+      const before = sent.length;
+      const unknown = (await request(http).post('/api/v1/parent/auth/forgot').send({ email: `nobody${uniq}@example.com` }).expect(200)).body;
+      const known = (await request(http).post('/api/v1/parent/auth/forgot').send({ email: g.email.toUpperCase() }).expect(200)).body;
+      expect(known).toEqual(unknown);
+      const mails = sent.slice(before);
+      expect(mails).toHaveLength(1);
+      expect(mails[0]).toMatchObject({ to: g.email });
+      expect(mails[0].cc).toBeUndefined();
+      const tokenInLink = mails[0].text.match(/#reset=([A-Za-z0-9_-]+)/)![1];
+      // asking again straight away sends nothing new (at most one every 2 minutes)
+      await request(http).post('/api/v1/parent/auth/forgot').send({ email: g.email }).expect(200);
+      expect(sent.length).toBe(before + 1);
+      // the email log keeps the message without the code
+      const log = (await request(http).get(`/api/v1/email/log?guardianId=${g.id}&kind=password_reset`).set(auth()).expect(200)).body;
+      expect(log).toHaveLength(1);
+      const body = (await request(http).get(`/api/v1/email/log/${log[0].id}/body`).set(auth()).expect(200)).body.html;
+      expect(body).not.toContain(tokenInLink);
+
+      await request(http).post('/api/v1/parent/auth/reset').send({ token: tokenInLink, newPassword: 'short' }).expect(400);
+      await request(http).post('/api/v1/parent/auth/reset').send({ token: 'x'.repeat(43), newPassword: 'NewGoal2027' }).expect(400);
+      const ok = (await request(http).post('/api/v1/parent/auth/reset').send({ token: tokenInLink, newPassword: 'NewGoal2027' }).expect(200)).body;
+      expect(ok).toMatchObject({ ok: true, email: g.email });
+      // single use
+      await request(http).post('/api/v1/parent/auth/reset').send({ token: tokenInLink, newPassword: 'Another2027' }).expect(400);
+      // the new password works and replaces the temporary one (no forced change)
+      const r = (await request(http).post('/api/v1/parent/auth/login').send({ email: g.email, password: 'NewGoal2027' }).expect(201)).body;
+      expect(r.mustChangePassword).toBe(false);
+      await request(http).get('/api/v1/parent/me').set({ Authorization: `Bearer ${r.accessToken}` }).expect(200);
+    });
   });
 
   describe('inventory', () => {

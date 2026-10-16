@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Repository } from 'typeorm';
+import { dubaiWeekday, REGISTER_COUNT_SQL } from '../player-desk/training-days';
 import {
   Attendance, AttendanceStatus, Player, Session,
 } from '../../database/entities';
@@ -26,13 +27,22 @@ export class AttendanceService {
     if (!session.teamId) {
       return { session, roster: [], note: 'Session has no team assigned' };
     }
-    const players = await this.players.find({
+    const onTeam = await this.players.find({
       where: { currentTeamId: session.teamId, archivedAt: IsNull() },
       relations: { ageGroup: true },
       order: { firstName: 'ASC' },
     });
     const marks = await this.attendances.find({ where: { sessionId } });
     const byPlayer = new Map(marks.map((m) => [m.playerId, m]));
+    // A child who chose fewer days than the team trains is on the register only on their days
+    // (anyone already marked stays on it).
+    const day = dubaiWeekday(session.startsAt);
+    const own: Array<{ playerId: string; days: string[] }> = onTeam.length ? await this.sessions.manager.query(
+      `SELECT e."playerId", e."trainingDays"::text[] AS days FROM enrolments e
+        WHERE e."playerId" = ANY($1) AND e."teamId" = $2 AND e.status IN ('ACTIVE', 'PENDING') AND e."trainingDays" IS NOT NULL
+          AND ($3::uuid IS NULL OR e."termId" = $3)`, [onTeam.map((p) => p.id), session.teamId, session.termId ?? null]) : [];
+    const offToday = new Set(own.filter((r) => !r.days.includes(day)).map((r) => r.playerId));
+    const players = onTeam.filter((p) => !offToday.has(p.id) || byPlayer.has(p.id));
     // Children booked in for a free trial at this session (from Trials & Leads).
     const trials: any[] = await this.sessions.manager.query(
       `SELECT id AS "leadId", reference, "playerName" AS name, "guardianName", "guardianMobile", "ageGroupLabel" AS category,
@@ -52,6 +62,7 @@ export class AttendanceService {
         comment: byPlayer.get(p.id)?.comment ?? null,
         marked: byPlayer.has(p.id),
       })),
+      notToday: onTeam.length - players.length,
       markedCount: marks.length,
       total: players.length,
       complete: players.length > 0 && marks.length >= players.length,
@@ -146,7 +157,7 @@ export class AttendanceService {
     const out: any[] = [];
     for (const s of past) {
       const marks = await this.attendances.count({ where: { sessionId: s.id } });
-      const roster = await this.players.count({ where: { currentTeamId: s.teamId!, archivedAt: IsNull() } });
+      const [{ n: roster }] = await this.sessions.manager.query(`SELECT ${REGISTER_COUNT_SQL('s', 't')} AS n FROM sessions s JOIN teams t ON t.id = s."teamId" WHERE s.id = $1`, [s.id]);
       if (roster > 0 && marks < roster) {
         out.push({ sessionId: s.id, startsAt: s.startsAt, team: s.team?.name, marked: marks, roster });
       }

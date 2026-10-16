@@ -26,14 +26,58 @@ function loginView(msg) {
     <div class="fld"><label for="l-email">Email</label><input id="l-email" type="email" autocomplete="username"></div>
     <div class="fld"><label for="l-pass">Password</label><input id="l-pass" type="password" autocomplete="current-password"></div>
     <button class="btn" id="l-go" style="width:100%">Sign in</button><div class="err" id="l-err">${esc(msg || '')}</div>
-    <p style="margin:14px 0 0;font-size:12px">Forgot your password? Ask the academy to send you new sign-in details.</p></div>`;
+    <p style="margin:14px 0 0;font-size:12px"><a href="#" id="l-forgot">Forgot your password?</a></p></div>`;
   const go = async () => {
     $('l-err').textContent = ''; $('l-go').disabled = true;
     try { const r = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email: $('l-email').value.trim(), password: $('l-pass').value }) }); save(r.accessToken, r.mustChangePassword); route(); }
     catch (e) { $('l-err').textContent = e.message; } finally { if ($('l-go')) $('l-go').disabled = false; }
   };
   $('l-go').onclick = go; $('l-pass').onkeydown = (e) => { if (e.key === 'Enter') go(); };
+  $('l-forgot').onclick = (e) => { e.preventDefault(); forgotView($('l-email').value.trim()); };
   $('l-email').focus();
+}
+
+/** Forgot password: ask for a link by email (the answer never says whether the email has an account). */
+function forgotView(email) {
+  $('p-out').hidden = true;
+  $('p-view').innerHTML = `<div class="pcard narrow"><h1>Forgot your password?</h1><p>Enter the email you sign in with. We'll email you a link to choose a new password.</p>
+    <div class="fld"><label for="f-email">Email</label><input id="f-email" type="email" autocomplete="username" value="${esc(email || '')}"></div>
+    <button class="btn" id="f-go" style="width:100%">Email me a link</button><div class="err" id="f-err"></div>
+    <p style="margin:14px 0 0;font-size:12px"><a href="#" id="f-back">Back to sign-in</a></p></div>`;
+  const back = () => { $('f-back').onclick = (e) => { e.preventDefault(); loginView(); }; };
+  const go = async () => {
+    const em = $('f-email').value.trim();
+    if (!/^\S+@\S+\.\S+$/.test(em)) { $('f-err').textContent = 'Enter your email address.'; return; }
+    $('f-err').textContent = ''; $('f-go').disabled = true;
+    try {
+      const r = await api('/auth/forgot', { method: 'POST', body: JSON.stringify({ email: em }) });
+      $('p-view').innerHTML = `<div class="pcard narrow"><h1>Check your email</h1><p>${esc(r.message)}</p>
+        <p style="font-size:13px">The link works for 60 minutes. Nothing arrived? Check your junk folder, or call the academy.</p>
+        <p style="margin:14px 0 0;font-size:12px"><a href="#" id="f-back">Back to sign-in</a></p></div>`;
+      back();
+    } catch (e) { $('f-err').textContent = e.message; if ($('f-go')) $('f-go').disabled = false; }
+  };
+  $('f-go').onclick = go; $('f-email').onkeydown = (e) => { if (e.key === 'Enter') go(); };
+  back(); $('f-email').focus();
+}
+
+/** Opened from the emailed link (#reset=…): choose a new password, then sign in with it. */
+function resetView(token) {
+  $('p-out').hidden = true;
+  $('p-view').innerHTML = `<div class="pcard narrow"><h1>Choose a new password</h1><p>At least 8 characters, with letters and a number.</p>
+    <div class="fld"><label for="r-new">New password</label><input id="r-new" type="password" autocomplete="new-password"></div>
+    <div class="fld"><label for="r-new2">New password again</label><input id="r-new2" type="password" autocomplete="new-password"></div>
+    <button class="btn" id="r-go" style="width:100%">Save password</button><div class="err" id="r-err"></div></div>`;
+  $('r-go').onclick = async () => {
+    const n1 = $('r-new').value, n2 = $('r-new2').value;
+    if (n1 !== n2) { $('r-err').textContent = 'The two passwords are different.'; return; }
+    $('r-go').disabled = true;
+    try {
+      const r = await api('/auth/reset', { method: 'POST', body: JSON.stringify({ token, newPassword: n1 }) });
+      loginView(); $('l-email').value = r.email || ''; $('l-pass').focus(); toast('Password saved — sign in with it now');
+    } catch (e) { $('r-err').textContent = Array.isArray(e.body?.message) ? e.body.message.join(' ') : e.message; $('r-go').disabled = false; }
+  };
+  $('r-new').focus();
 }
 
 function changeView(first) {
@@ -95,6 +139,9 @@ async function homeView() {
 }
 
 async function route() {
+  // The emailed link: take the code out of the address bar straight away, then show the form.
+  const m = /^#reset=([A-Za-z0-9_-]{20,100})$/.exec(location.hash);
+  if (m) { history.replaceState(null, '', location.pathname); save(null); return resetView(m[1]); }
   if (!TOKEN) return loginView();
   if (MUST) return changeView(true);
   try { await homeView(); }

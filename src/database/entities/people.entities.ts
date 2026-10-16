@@ -8,6 +8,8 @@ import { User } from './auth.entities';
 @Entity('guardians')
 export class Guardian {
   @PrimaryGeneratedColumn('uuid') id: string;
+  /** Id of this record in the old admin (set by the import; empty for records made here). */
+  @Index() @Column({ type: 'varchar', length: 40, nullable: true }) legacyId?: string | null;
   @Index({ unique: true }) @Column() reference: string; // PR-000001
   @Column() fullName: string;
   @Column({ nullable: true }) relationship?: string;
@@ -23,8 +25,17 @@ export class Guardian {
   @Column({ type: 'timestamptz', nullable: true }) tempPasswordExpiresAt?: Date | null;
   @Column({ type: 'timestamptz', nullable: true }) credentialsSentAt?: Date | null;
   @Column({ type: 'timestamptz', nullable: true }) lastLoginAt?: Date | null;
+  /** "Forgot password": SHA-256 of the one-time code in the emailed link (the code itself is never stored). */
+  @Column({ type: 'varchar', length: 64, nullable: true, select: false }) resetTokenHash?: string | null;
+  @Column({ type: 'timestamptz', nullable: true }) resetTokenExpiresAt?: Date | null;
+  /** Last time a reset link was asked for — at most one email every 2 minutes. */
+  @Column({ type: 'timestamptz', nullable: true }) resetRequestedAt?: Date | null;
   @Column({ nullable: true }) emirate?: string;
   @Column({ nullable: true }) city?: string;
+  @Column({ type: 'varchar', length: 60, nullable: true }) nationality?: string | null;
+  @Column({ type: 'text', nullable: true }) address?: string | null;
+  /** Area / district, e.g. Khalifa City. */
+  @Column({ type: 'varchar', length: 80, nullable: true }) area?: string | null;
   @Column({ type: 'enum', enum: LeadSource, nullable: true }) howHeard?: LeadSource;
   @Column({ default: false }) marketingConsent: boolean;
   @Column({ default: true }) isActive: boolean;
@@ -43,6 +54,8 @@ export class Guardian {
 @Entity('players')
 export class Player {
   @PrimaryGeneratedColumn('uuid') id: string;
+  /** Id of this record in the old admin (set by the import; empty for records made here). */
+  @Index() @Column({ type: 'varchar', length: 40, nullable: true }) legacyId?: string | null;
   @Index({ unique: true }) @Column() reference: string; // PL-000001
   @Index() @Column() guardianId: string;
   @ManyToOne(() => Guardian, (g) => g.players)
@@ -86,6 +99,8 @@ export class Player {
 @Entity('player_comments')
 export class PlayerComment {
   @PrimaryGeneratedColumn('uuid') id: string;
+  /** Id of this record in the old admin (set by the import; empty for records made here). */
+  @Index() @Column({ type: 'varchar', length: 40, nullable: true }) legacyId?: string | null;
   @Index() @Column() playerId: string;
   @ManyToOne(() => Player, (p) => p.comments, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'playerId' })

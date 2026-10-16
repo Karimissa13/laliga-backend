@@ -1,6 +1,6 @@
 import {
   NotFoundException,
-  Body, CanActivate, Controller, ExecutionContext, Get, Injectable, Param, ParseUUIDPipe, Post, Req, Res, UseGuards,
+  Body, CanActivate, HttpCode, Controller, ExecutionContext, Get, Injectable, Param, ParseUUIDPipe, Post, Req, Res, UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
@@ -17,6 +17,12 @@ export class ParentLoginDto {
 }
 export class ParentChangePasswordDto {
   @ApiProperty() @IsString() @MinLength(1) @MaxLength(200) currentPassword: string;
+  @ApiProperty() @IsString() @MinLength(8) @MaxLength(200) newPassword: string;
+}
+
+export class ParentForgotDto { @ApiProperty() @IsEmail() @MaxLength(200) email: string }
+export class ParentResetDto {
+  @ApiProperty() @IsString() @MinLength(20) @MaxLength(100) token: string;
   @ApiProperty() @IsString() @MinLength(8) @MaxLength(200) newPassword: string;
 }
 
@@ -42,6 +48,14 @@ export class ParentPortalController {
   @Public() @Post('auth/login')
   @ApiOperation({ summary: 'Parent sign-in (email + password from the welcome email)' })
   login(@Body() dto: ParentLoginDto) { return this.svc.login(dto.email, dto.password); }
+
+  @Public() @Post('auth/forgot') @HttpCode(200)
+  @ApiOperation({ summary: 'Forgot password: emails a one-time link (same answer whether or not the email has an account)' })
+  forgot(@Body() dto: ParentForgotDto) { return this.svc.requestReset(dto.email); }
+
+  @Public() @Post('auth/reset') @HttpCode(200)
+  @ApiOperation({ summary: 'Choose a new password from the emailed link' })
+  reset(@Body() dto: ParentResetDto) { return this.svc.resetPassword(dto.token, dto.newPassword); }
 
   @Public() @UseGuards(ParentGuard) @Post('auth/change-password')
   @ApiOperation({ summary: 'Choose a new password (required after a temporary one)' })

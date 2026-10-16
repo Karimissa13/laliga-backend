@@ -8,6 +8,8 @@ import { Coach } from './people.entities';
 @Entity('seasons')
 export class Season {
   @PrimaryGeneratedColumn('uuid') id: string;
+  /** Id of this record in the old admin (set by the import; empty for records made here). */
+  @Index() @Column({ type: 'varchar', length: 40, nullable: true }) legacyId?: string | null;
   @Index({ unique: true }) @Column() name: string;
   @Column({ type: 'date', nullable: true }) startDate?: string;
   @Column({ type: 'date', nullable: true }) endDate?: string;
@@ -21,6 +23,8 @@ export class Season {
 @Entity('terms')
 export class Term {
   @PrimaryGeneratedColumn('uuid') id: string;
+  /** Id of this record in the old admin (set by the import; empty for records made here). */
+  @Index() @Column({ type: 'varchar', length: 40, nullable: true }) legacyId?: string | null;
   @Index() @Column() seasonId: string;
   @ManyToOne(() => Season, (s) => s.terms)
   @JoinColumn({ name: 'seasonId' })
@@ -73,6 +77,8 @@ export class AgeGroup {
 @Entity('teams')
 export class Team {
   @PrimaryGeneratedColumn('uuid') id: string;
+  /** Id of this record in the old admin (set by the import; empty for records made here). */
+  @Index() @Column({ type: 'varchar', length: 40, nullable: true }) legacyId?: string | null;
   @Column() name: string;
   @Index() @Column({ nullable: true }) seasonId?: string;
   @ManyToOne(() => Season, { nullable: true })

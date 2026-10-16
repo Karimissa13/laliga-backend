@@ -89,6 +89,7 @@ export class GuardiansService {
   async create(input: {
     fullName: string; relationship?: string; email: string; secondaryEmail?: string;
     mobile: string; emirate?: string; city?: string; marketingConsent?: boolean; password?: string;
+    nationality?: string | null; address?: string | null; area?: string | null;
   }) {
     if (await this.guardians.findOne({ where: { email: input.email.toLowerCase() } })) {
       throw new BadRequestException('A guardian with this email already exists');
@@ -102,6 +103,9 @@ export class GuardiansService {
       mobile: normaliseMobile(input.mobile) ?? input.mobile,
       emirate: input.emirate,
       city: input.city,
+      nationality: input.nationality?.trim() || null,
+      address: input.address?.trim() || null,
+      area: input.area?.trim() || null,
       marketingConsent: input.marketingConsent ?? false,
       passwordHash: input.password ? await bcrypt.hash(input.password, 10) : undefined,
     });
@@ -134,6 +138,7 @@ export class GuardiansService {
       if (!extra) patch.secondaryEmailName = null;
     }
     if (input.secondaryEmailName !== undefined) patch.secondaryEmailName = input.secondaryEmailName ? String(input.secondaryEmailName).trim() : null;
+    for (const k of ['nationality', 'address', 'area'] as const) if (input[k] !== undefined) patch[k] = input[k] ? String(input[k]).trim() : null;
     if (input.password) patch.passwordHash = await bcrypt.hash(input.password, 10);
     await this.guardians.update(id, patch);
     return this.findOne(id);

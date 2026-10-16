@@ -9,10 +9,12 @@ import { PACKAGE_LABEL } from '../finance/pricing';
 export interface EnrolmentLike {
   id: string; termId: string; status: string; enrolledAt: Date | string;
   invoiceId?: string | null; package?: string | null; sessionsPerWeek?: number | null;
+  /** The team's days this child attends (null = all of them). */
+  trainingDays?: string[] | null;
   /** Set on the enrolment that replaced another in a squad move. */
   movedFromId?: string | null;
   term?: { id?: string; name?: string; startDate?: string | null; endDate?: string | null } | null;
-  season?: { name?: string } | null; team?: { name?: string } | null;
+  season?: { name?: string } | null; team?: { name?: string; trainingDays?: string[] | null } | null;
 }
 
 export interface Purchase {
@@ -25,6 +27,11 @@ export interface Purchase {
   team: string | null;
   status: string;
   sessionsPerWeek: number | null;
+  /** The days this child trains: their own choice, else every day of the team. */
+  trainingDays: string[];
+  /** The team's training days, and whether the child chose fewer of them. */
+  teamDays: string[];
+  ownDays: boolean;
   enrolledAt: string;
   invoiceId: string | null;
   /** The term in progress today, else the next one, else the last. */
@@ -69,6 +76,7 @@ export function summarisePurchases(enrols: EnrolmentLike[], today = dubaiToday()
       team: pick.find((e) => e.team?.name)?.team?.name ?? null,
       status,
       sessionsPerWeek: pick.find((e) => e.sessionsPerWeek)?.sessionsPerWeek ?? null,
+      ...daysOf(pick, now?.id ?? null),
       enrolledAt: new Date(Math.min(...pick.map((e) => new Date(e.enrolledAt).getTime()))).toISOString(),
       invoiceId: pick.find((e) => e.invoiceId)?.invoiceId ?? null,
       currentTerm: now ? { id: now.id, name: now.name } : null,
@@ -76,6 +84,14 @@ export function summarisePurchases(enrols: EnrolmentLike[], today = dubaiToday()
   }
   // Newest purchase first; within the same moment, the one with live terms first.
   return out.sort((a, b) => b.enrolledAt.localeCompare(a.enrolledAt) || (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9));
+}
+
+/** The days of the term in progress (else any term of the purchase) — every enrolment of a purchase usually shares them. */
+function daysOf(pick: EnrolmentLike[], termId: string | null) {
+  const e = pick.find((x) => x.termId === termId && x.status !== 'CANCELLED') ?? pick.find((x) => x.status !== 'CANCELLED') ?? pick[0];
+  const teamDays = [...(e?.team?.trainingDays ?? [])];
+  const own = e?.trainingDays?.length ? [...e.trainingDays] : null;
+  return { trainingDays: own ?? teamDays, teamDays, ownDays: !!own };
 }
 
 /**

@@ -1,3 +1,4 @@
+import { checkTrainingDays, daysText } from './training-days';
 import { currentPurchase, summarisePurchases } from '../registration/purchases';
 import { manualAmount, resolveManualDiscount } from '../finance/manual-discounts';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
@@ -162,6 +163,7 @@ export class PlayerDeskService {
         relationship: player.guardian.relationship, email: player.guardian.email,
         secondaryEmail: player.guardian.secondaryEmail, secondaryEmailName: player.guardian.secondaryEmailName ?? null, mobile: player.guardian.mobile,
         emirate: player.guardian.emirate, city: player.guardian.city,
+        area: player.guardian.area ?? null, nationality: player.guardian.nationality ?? null, address: player.guardian.address ?? null,
         wallet: { balance: Number(wallet?.balance ?? 0) },
       },
       siblings: siblings.map((s) => ({
@@ -667,6 +669,26 @@ export class PlayerDeskService {
       archived = true;
     }
     return { playerId, cancelled: what, termsLeft, archived };
+  }
+
+  /**
+   * The team's days a child attends, for every live term of one purchase (Karim, 16 Oct 2026):
+   * a 1× or 2× child on a team that trains more often picks their days. Empty = every day.
+   */
+  async setTrainingDays(playerId: string, input: { enrolmentIds: string[]; days: string[] }, actorId?: string) {
+    const rows = await this.enrolments.find({ where: { id: In(input.enrolmentIds), playerId }, relations: { team: true, term: true } });
+    if (rows.length !== input.enrolmentIds.length) throw new BadRequestException('That term is not this child\'s.');
+    const live = rows.filter((e) => [EnrolmentStatus.ACTIVE, EnrolmentStatus.PENDING].includes(e.status));
+    if (!live.length) throw new BadRequestException('These terms are not live any more.');
+    const teams = [...new Set(live.map((e) => e.teamId ?? ''))];
+    if (teams.length !== 1 || !live[0].team) throw new BadRequestException('Choose the days term by term — these terms are on different teams (or no team).');
+    const spw = live.find((e) => e.sessionsPerWeek)?.sessionsPerWeek ?? null;
+    const r = checkTrainingDays(live[0].team.trainingDays ?? [], input.days, spw);
+    if ('error' in r) throw new BadRequestException(r.error);
+    await this.enrolments.update(live.map((e) => e.id), { trainingDays: r.days as any });
+    const text = r.days ? daysText(r.days) : `every team day (${daysText(live[0].team.trainingDays ?? [])})`;
+    await this.playersSvc.addComment(playerId, `Training days: ${text} — ${live.map((e) => e.term?.name).filter(Boolean).join(', ')}, ${live[0].team.name}.`, actorId);
+    return { playerId, trainingDays: r.days ?? live[0].team.trainingDays ?? [], ownDays: !!r.days, text };
   }
 
   /**

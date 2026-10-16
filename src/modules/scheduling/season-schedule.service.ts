@@ -1,3 +1,4 @@
+import { REGISTER_COUNT_SQL } from '../player-desk/training-days';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, In } from 'typeorm';
@@ -135,7 +136,7 @@ export class SeasonScheduleService {
       `SELECT s.id, s."startsAt", s."endsAt", s.type, s.title, s."isCancelled", s."cancelReason",
               t.id AS "teamId", t.name AS team, t.level, u."fullName" AS coach, l.name AS location,
               (SELECT count(*)::int FROM attendances a WHERE a."sessionId" = s.id) AS marked,
-              (SELECT count(*)::int FROM players p WHERE p."currentTeamId" = t.id AND p."archivedAt" IS NULL) AS roster
+              ${REGISTER_COUNT_SQL('s', 't')} AS roster
        FROM sessions s LEFT JOIN teams t ON t.id = s."teamId" LEFT JOIN coaches c ON c.id = s."coachId"
        LEFT JOIN users u ON u.id = c."userId" LEFT JOIN locations l ON l.id = s."locationId"
        WHERE s."startsAt" >= ($1::date)::timestamp AT TIME ZONE 'Asia/Dubai'

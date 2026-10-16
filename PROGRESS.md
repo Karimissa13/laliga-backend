@@ -477,3 +477,30 @@ Karim (13 Oct): after cancelling an invoice the player page still showed the chi
 - [x] **Live data:** LA-000008 was cancelled before this release with its 3 enrolments still live; migration `CancelTermsOfCancelledInvoices1791900000000` applies the same rule to invoices cancelled earlier (statuses only).
 - [x] **User term:** the player actions are renamed — **"User term — register a package"** (term option, 1×, 2× or 3× a week — the price list decides which are offered — then the invoice) and **"Add items"** (kits, league, cups).
 - [x] **Tests:** 126 unit + 170 e2e (cancel → no current term → re-register at 1× a week; cancel from the player page + archive; sibling and paid refusals; full refund then cancel).
+
+## ✅ Completed — Ready for the move from the old admin (part 1) — 16 Oct 2026
+
+The old system's developer reviewed the new one and sent a migration report (Seasons 9 + 10: 349 families, 378 children, 785 invoices, 692 payments, 21 wallets). Karim's decisions (16 Oct):
+- **Training slots:** each real training time becomes its own team (e.g. "U8 Dev Tue/Thu 5:00" and "… 6:30"), and a 1× / 2× child picks which of the team's days they attend. Not the report's option A (a slot per child), because sessions, registers and team capacity all work per team.
+- **Extra details kept:** parent nationality, address, area only. The other section-6 fields stay in the old admin.
+- **Unpaid invoices from before Season 9** (28 families, AED 41,895.76): one "earlier seasons" opening balance per family, listing the old INVAB numbers (done by the importer).
+- **Parent portal:** shows the Season 9 and 10 invoices.
+
+- [x] **Forgot password (parent portal):**
+  - The sign-in page has "Forgot your password?". It always gives the same answer, so it never tells whether an email has an account.
+  - The email (same design as the payment reminder) goes to the main sign-in email only, never to the additional email. It holds a one-time link that works for 60 minutes. Only the link's SHA-256 is stored, and the email log keeps the message with the link blanked out. At most one email every 2 minutes.
+  - `#reset=…` opens "Choose a new password"; the link is removed from the address bar straight away. Afterwards no forced change, and the login lock is cleared.
+  - It needs the academy mailbox (`MAIL_*`) to reach parents; until then the email is logged as not sent.
+- [x] **Old IDs:** `legacyId` on users, guardians, players, comments, seasons, terms, teams, invoices, invoice lines, payments, instalments, applied discounts, wallet entries, leads and enrolments, so every imported record can be traced back to the old admin.
+- [x] **Old invoice numbers:** the invoice-number box finds `INVAB-1234` as well as `LA-001234`. A prefix limits the search to that series; "1234" alone finds both. New invoices keep the LA sequence.
+- [x] **Parent nationality, address, area:** on the family card of the player page, both parent edit forms and new-parent registration. "City / area" is now "City" plus a separate "Area".
+- [x] **A child's own training days:**
+  - Player page → Terms and teams shows "Trains Tue, Thu". When a child pays for fewer sessions than the team trains, it says "choose the days", and **Training days** lets staff tick them (as many as the sessions paid for, only the team's days; untick all to go back to every day). Written to the child's history and audited.
+  - The coach's register lists the child only on their days (anyone already marked stays on it), and the "x / y marked" counts on Sessions and the dashboard follow the same rule.
+  - Pure rule in `player-desk/training-days.ts` (unit-tested).
+- [x] **Migration** `MigrationReadiness1792165167294`: additive only (new columns and indexes).
+- [x] **Tests:** 132 unit + 172 e2e — forgot password (same answer, one email, no copy to the additional email, link hidden in the log, single use, the new password works) and for training days (refusals, own days, register on Tuesday vs Thursday, back to all days).
+
+Next for the move:
+- The importer from the MySQL dump (with the team map and the reconciliation report). It needs the dump from the old host.
+- The staff accounts and their roles.

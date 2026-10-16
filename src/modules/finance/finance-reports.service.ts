@@ -201,7 +201,12 @@ export class FinanceReportsService {
     }
     // The LA / PL / PR boxes take just the number, as on the old screen.
     const num = (v: string) => v.trim().replace(/^(LA|PL|PR)-?/i, '');
-    if (f.invoiceNo) w.push(`regexp_replace(i.number, '^LA-0*', '') = regexp_replace(${p(num(f.invoiceNo))}, '^0*', '')`);
+    if (f.invoiceNo) {
+      // "1234" finds LA-001234 and an old INVAB-1234; with a prefix ("INVAB-1234", "LA 12") only that series.
+      const m = /^\s*([A-Za-z]*)[\s-]*0*(\w*)\s*$/.exec(f.invoiceNo) ?? ['', '', f.invoiceNo.trim()];
+      if (m[1]) w.push(`regexp_replace(upper(i.number), '^([A-Z]+)-?0*', '\\1') = ${p(m[1].toUpperCase() + m[2].toUpperCase())}`);
+      else w.push(`regexp_replace(i.number, '^[A-Za-z]+-?0*', '') = ${p(m[2])}`);
+    }
     if (f.parentNo) w.push(`regexp_replace(g.reference, '^PR-0*', '') = regexp_replace(${p(num(f.parentNo))}, '^0*', '')`);
     if (f.playerNo) {
       w.push(`EXISTS (SELECT 1 FROM invoice_line_items li JOIN players pl ON pl.id = li."playerId" WHERE li."invoiceId" = i.id

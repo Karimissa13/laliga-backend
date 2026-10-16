@@ -95,6 +95,12 @@ export class CancelTermDto {
   @ApiPropertyOptional({ description: 'Archive the child when no term is left' }) @IsOptional() @IsBoolean() archive?: boolean;
 }
 
+export class TrainingDaysDto {
+  @ApiProperty({ description: 'The purchase’s live terms (enrolments) the days apply to' }) @IsArray() @ArrayMinSize(1) @ArrayMaxSize(10) @IsUUID('all', { each: true }) enrolmentIds: string[];
+  @ApiProperty({ description: 'Days of the team the child attends; empty = every team day', example: ['TUE', 'THU'] })
+  @IsArray() @ArrayMaxSize(7) @IsIn(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'], { each: true }) days: string[];
+}
+
 export class AddItemsDto {
   @ApiProperty({ type: [ExtraItemDto] }) @IsArray() @ArrayMinSize(1) @ArrayMaxSize(20)
   @ValidateNested({ each: true }) @Type(() => ExtraItemDto) items: ExtraItemDto[];

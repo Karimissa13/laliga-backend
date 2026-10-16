@@ -267,6 +267,47 @@ describe('Players section (e2e)', () => {
     });
   });
 
+  describe('a child\'s own training days (Karim, 16 Oct 2026)', () => {
+    it('1× a week on a Tue/Thu team: picks Thursday; the register shows the child only on Thursdays', async () => {
+      const g = (await request(http).post('/api/v1/guardians').set(auth()).send({
+        fullName: `Days ${uniq}`, email: `days${uniq}@example.com`, mobile: `+97156${String(uniq).slice(-7)}`,
+        nationality: 'Emirati', area: 'Khalifa City', address: 'Villa 12, Street 4',
+      }).expect(201)).body;
+      expect(g).toMatchObject({ nationality: 'Emirati', area: 'Khalifa City', address: 'Villa 12, Street 4' });
+      const p = (await request(http).post('/api/v1/players').set(auth()).send({ guardianId: g.id, firstName: 'Omar', lastName: `Days${uniq}`, gender: 'MALE', dateOfBirth: '2015-03-01', sendWelcome: false }).expect(201)).body;
+      const t = team('U12 Development');
+      await request(http).post(`/api/v1/players/${p.id}/terms`).set(auth()).send({ termId: term1, sessionsPerWeek: 1, teamId: t.id }).expect(201);
+      let pu = (await request(http).get(`/api/v1/players/${p.id}/profile`).set(auth()).expect(200)).body.purchases[0];
+      expect(pu).toMatchObject({ teamDays: ['TUE', 'THU'], trainingDays: ['TUE', 'THU'], ownDays: false });
+      expect((await request(http).get(`/api/v1/players/${p.id}/profile`).set(auth()).expect(200)).body.guardian).toMatchObject({ nationality: 'Emirati', area: 'Khalifa City', address: 'Villa 12, Street 4' });
+      const ids = pu.terms.map((x: any) => x.enrolmentId);
+
+      const days = (b: any) => request(http).post(`/api/v1/players/${p.id}/terms/days`).set(auth()).send(b);
+      expect((await days({ enrolmentIds: ids, days: ['MON'] }).expect(400)).body.message).toMatch(/doesn't train on Mon/);
+      expect((await days({ enrolmentIds: ids, days: ['TUE', 'THU', 'WED'] }).expect(400)).body.message).toMatch(/Wed/);
+      expect((await days({ enrolmentIds: ids, days: ['TUE', 'THU'] }).expect(200)).body.ownDays).toBe(false);   // all days = no own days
+      const r = (await days({ enrolmentIds: ids, days: ['THU'] }).expect(200)).body;
+      expect(r).toMatchObject({ trainingDays: ['THU'], ownDays: true, text: 'Thu' });
+      pu = (await request(http).get(`/api/v1/players/${p.id}/profile`).set(auth()).expect(200)).body.purchases[0];
+      expect(pu).toMatchObject({ trainingDays: ['THU'], ownDays: true });
+
+      // Sessions of the team (17:00 Abu Dhabi): Tuesday 20 and Thursday 22 October.
+      const mkS = async (day: string) => (await request(http).post('/api/v1/sessions').set(auth()).send({
+        teamId: t.id, termId: term1, startsAt: `${day}T13:00:00Z`, endsAt: `${day}T14:00:00Z`, force: true,
+      }).expect(201)).body;
+      const tue = await mkS('2026-10-20'), thu = await mkS('2026-10-22');
+      const reg = async (s: any) => (await request(http).get(`/api/v1/sessions/${s.id}/register`).set(auth()).expect(200)).body;
+      const rTue = await reg(tue), rThu = await reg(thu);
+      expect(rTue.roster.map((x: any) => x.playerId)).not.toContain(p.id);
+      expect(rTue.notToday).toBeGreaterThanOrEqual(1);
+      expect(rThu.roster.map((x: any) => x.playerId)).toContain(p.id);
+
+      // Back to every team day.
+      expect((await days({ enrolmentIds: ids, days: [] }).expect(200)).body.ownDays).toBe(false);
+      expect((await reg(tue)).roster.map((x: any) => x.playerId)).toContain(p.id);
+    });
+  });
+
   describe('players export (Karim, 13 Oct 2026)', () => {
     it('exports every child matching the filters; coaches get no money columns', async () => {
       const list = (await request(http).get('/api/v1/players?limit=5').set(auth()).expect(200)).body;

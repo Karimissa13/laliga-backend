@@ -12,6 +12,9 @@ import { InvoicePdfService } from '../finance/invoice-pdf.service';
 import { SettingsService } from '../finance/settings.service';
 import { MailerService } from './mailer.service';
 import { invoiceEmail, welcomeEmail } from './email-templates';
+import { passwordResetEmail, redactResetLink } from './reset-email';
+import { LOGO_CID, LOGO_PUBLIC_PATH } from './reminder-email';
+import { brandLogo } from '../finance/invoice-pdf.service';
 
 const TEMP_DAYS = 7;
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
@@ -176,6 +179,32 @@ export class NotificationsService implements OnModuleInit {
       attachments: input.ref ? [{ ...input.ref, fileName: '' }] : null,
     });
     return { id: row.id, to: row.toAddress, sent: r.ok && !r.simulated, simulated: r.simulated, error: r.error ?? null };
+  }
+
+  /**
+   * "Forgot password" email: to the parent's own sign-in email only (never copied to the
+   * additional email — that person could otherwise take over the account). The log keeps
+   * the email with the one-time code blanked out.
+   */
+  async sendPasswordReset(guardianId: string, token: string, minutes: number) {
+    const g = await this.guardians.findOne({ where: { id: guardianId } });
+    if (!g?.email) return { sent: false };
+    const [s, profile] = await Promise.all([this.settings.notifications(), this.settings.invoiceProfile()]);
+    const base = s.portalUrl.split('#')[0];
+    const m = passwordResetEmail({
+      parentName: g.fullName, email: g.email, link: `${base}#reset=${token}`, minutes,
+      academyName: profile.academyName, companyName: profile.companyName, replyTo: s.replyTo,
+    });
+    const logo = brandLogo();
+    const r = await this.mailer.send({
+      to: g.email, subject: m.subject, html: m.html, text: m.text, fromName: s.fromName, replyTo: s.replyTo,
+      attachments: logo ? [{ filename: 'laliga-academy.png', content: logo, contentType: 'image/png', cid: LOGO_CID }] : undefined,
+    });
+    await this.record({
+      guardianId: g.id, to: g.email, subject: m.subject, kind: 'password_reset', result: r, attachments: null,
+      html: redactResetLink(m.html, token).split(`cid:${LOGO_CID}`).join(LOGO_PUBLIC_PATH),
+    });
+    return { sent: r.ok && !r.simulated };
   }
 
   // --------------------------------------------------------------------- log

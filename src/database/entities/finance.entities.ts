@@ -34,6 +34,8 @@ export class Fee {
 @Entity('invoices')
 export class Invoice {
   @PrimaryGeneratedColumn('uuid') id: string;
+  /** Id of this record in the old admin (set by the import; empty for records made here). */
+  @Index() @Column({ type: 'varchar', length: 40, nullable: true }) legacyId?: string | null;
   @Index({ unique: true }) @Column() number: string;
   @Index() @Column() guardianId: string;
   @ManyToOne(() => Guardian) @JoinColumn({ name: 'guardianId' }) guardian: Guardian;
@@ -66,6 +68,8 @@ export class Invoice {
 @Entity('invoice_line_items')
 export class InvoiceLineItem {
   @PrimaryGeneratedColumn('uuid') id: string;
+  /** Id of this record in the old admin (set by the import; empty for records made here). */
+  @Index() @Column({ type: 'varchar', length: 40, nullable: true }) legacyId?: string | null;
   @Index() @Column() invoiceId: string;
   @ManyToOne(() => Invoice, (i) => i.lineItems, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'invoiceId' })
@@ -91,6 +95,8 @@ export class InvoiceLineItem {
 @Entity('payments')
 export class Payment {
   @PrimaryGeneratedColumn('uuid') id: string;
+  /** Id of this record in the old admin (set by the import; empty for records made here). */
+  @Index() @Column({ type: 'varchar', length: 40, nullable: true }) legacyId?: string | null;
   @Index() @Column() invoiceId: string;
   @ManyToOne(() => Invoice, (i) => i.payments)
   @JoinColumn({ name: 'invoiceId' })
@@ -157,6 +163,8 @@ export class CreditNote {
 @Index(['invoiceId', 'seq'], { unique: true })
 export class InvoiceInstalment {
   @PrimaryGeneratedColumn('uuid') id: string;
+  /** Id of this record in the old admin (set by the import; empty for records made here). */
+  @Index() @Column({ type: 'varchar', length: 40, nullable: true }) legacyId?: string | null;
   @Index() @Column() invoiceId: string;
   @ManyToOne(() => Invoice, { onDelete: 'CASCADE' }) @JoinColumn({ name: 'invoiceId' }) invoice: Invoice;
   @Column({ type: 'int' }) seq: number;
@@ -219,6 +227,8 @@ export class Discount {
 @Entity('applied_discounts')
 export class AppliedDiscount {
   @PrimaryGeneratedColumn('uuid') id: string;
+  /** Id of this record in the old admin (set by the import; empty for records made here). */
+  @Index() @Column({ type: 'varchar', length: 40, nullable: true }) legacyId?: string | null;
   @Index() @Column() invoiceId: string;
   @ManyToOne(() => Invoice, (i) => i.discounts, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'invoiceId' })
@@ -256,6 +266,8 @@ export class Wallet {
 @Entity('wallet_transactions')
 export class WalletTransaction {
   @PrimaryGeneratedColumn('uuid') id: string;
+  /** Id of this record in the old admin (set by the import; empty for records made here). */
+  @Index() @Column({ type: 'varchar', length: 40, nullable: true }) legacyId?: string | null;
   @Index() @Column() walletId: string;
   @ManyToOne(() => Wallet, (w) => w.transactions, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'walletId' })

@@ -31,6 +31,8 @@ export class Role {
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid') id: string;
+  /** Id of this record in the old admin (set by the import; empty for records made here). */
+  @Index() @Column({ type: 'varchar', length: 40, nullable: true }) legacyId?: string | null;
   @Column() fullName: string;
   @Index({ unique: true }) @Column() email: string;
   @Column({ nullable: true }) mobile?: string;

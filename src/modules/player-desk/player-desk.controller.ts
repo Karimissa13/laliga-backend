@@ -3,7 +3,7 @@ import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Que
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PlayerDeskService } from './player-desk.service';
 import {
-  AddItemsDto, AddTermDto, CancelTermDto, AssignCoachDto, EligibleTeamsQueryDto, FamilyQuoteDto, FamilyTermsDto, GuardianLookupDto, OptionalReasonDto,
+  AddItemsDto, AddTermDto, CancelTermDto, TrainingDaysDto, AssignCoachDto, EligibleTeamsQueryDto, FamilyQuoteDto, FamilyTermsDto, GuardianLookupDto, OptionalReasonDto,
   NewChildQuoteDto, PlacementQueryDto, QuoteQueryDto, ReasonDto, RegistrationOptionsDto,
 } from './dto/player-desk.dto';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
@@ -47,6 +47,12 @@ export class PlayerDeskController {
   @ApiOperation({ summary: 'Cancel a term (and the invoice that bought it); optionally archive the child when no term is left' })
   cancelTerm(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CancelTermDto, @CurrentUser() user: AuthUser) {
     return this.desk.cancelTerm(id, dto, user?.id);
+  }
+
+  @Post('players/:id/terms/days') @RequirePermissions('player.edit') @Audit('player.training_days', 'player') @HttpCode(200)
+  @ApiOperation({ summary: 'Which of the team’s days the child attends (when coming fewer times a week than the team trains)' })
+  trainingDays(@Param('id', ParseUUIDPipe) id: string, @Body() dto: TrainingDaysDto, @CurrentUser() user: AuthUser) {
+    return this.desk.setTrainingDays(id, dto, user?.id);
   }
 
   @Post('players/:id/archive') @RequirePermissions('player.delete') @Audit('player.archive', 'player')

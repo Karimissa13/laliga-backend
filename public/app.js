@@ -944,7 +944,9 @@ function renderPlayer() {
           <div class="big">${esc(g.fullName)}</div><div class="mini">${esc(g.relationship || 'Parent')} · ${esc(g.reference)}</div>
           ${kv([['Email', esc(g.email)], g.secondaryEmail && ['Also', esc(g.secondaryEmail) + (g.secondaryEmailName ? ` <span class="mini">${esc(g.secondaryEmailName)}</span>` : '')],
                 ['Mobile', `<span class="mono">${esc(fmtPhone(g.mobile))}</span>`],
-                ['Area', esc([...new Set([g.city, g.emirate].filter(Boolean))].join(', ') || '—')], g.wallet && ['Wallet', money(g.wallet.balance)]])}
+                ['Area', esc([...new Set([g.area, g.city, g.emirate].filter(Boolean))].join(', ') || '—')],
+                g.address && ['Address', esc(g.address)], g.nationality && ['Nationality', esc(g.nationality)],
+                g.wallet && ['Wallet', money(g.wallet.balance)]])}
         </div>
         ${d.moneyHidden ? '' : `<div class="card fact"><h4>Billing</h4>
           <div class="big">${payPill(d.payment)}</div>
@@ -973,7 +975,8 @@ function renderPlayer() {
         <div class="card" style="padding:14px 16px"><h3 style="font-size:14px;margin-bottom:10px">Terms and teams</h3>
           <div class="tl">${(d.purchases || []).map((pu, pi) => `<div class="ev"><b>${esc(pu.label)} · ${esc(pu.team || 'no team')}</b>${['ACTIVE', 'PENDING'].includes(pu.status) && can('invoice.edit') && can('player.edit') && !d.player.archivedAt ? ` <button class="lnk" data-act="pCancelTerm" data-a1="${pi}" style="float:right">Cancel term</button>` : ''}
             ${pu.terms.length > 1 ? `<div class="mini" style="margin:2px 0">${pu.terms.map((t) => `${esc(t.name)}${t.status !== pu.status ? ' ' + statusPill(t.status) : ''}`).join(' · ')}</div>` : ''}
-            <span>${esc(pu.season || '')}${pu.sessionsPerWeek ? ` · ${pu.sessionsPerWeek} session${pu.sessionsPerWeek === 1 ? '' : 's'} a week` : ''} — ${statusPill(pu.status)} ${dt(pu.enrolledAt)}</span></div>`).join('') || '<div class="mini">Not enrolled in any term yet.</div>'}</div>
+            <span>${esc(pu.season || '')}${pu.sessionsPerWeek ? ` · ${pu.sessionsPerWeek} session${pu.sessionsPerWeek === 1 ? '' : 's'} a week` : ''} — ${statusPill(pu.status)} ${dt(pu.enrolledAt)}</span>
+            ${daysLine(pu, pi, !d.player.archivedAt && can('player.edit'))}</div>`).join('') || '<div class="mini">Not enrolled in any term yet.</div>'}</div>
         </div>
         <div class="card" style="padding:14px 16px"><h3 style="font-size:14px;margin-bottom:10px">Attendance and development</h3>
           ${at ? `<div class="score"><span class="lb">attendance</span><span class="sb"><i style="width:${at.rate || 0}%;background:${(at.rate || 0) >= 80 ? 'var(--good)' : 'var(--warn)'}"></i></span><span class="sv">${at.rate ?? '—'}%</span></div>
@@ -1025,7 +1028,10 @@ ACT.pEdit = () => {
       ${fld('Email', 'e-gmail', g.email, 'type="email"', true)}
       ${fld('Second email', 'e-gmail2', g.secondaryEmail, 'type="email"', true)}
       <div><label class="lbl" for="e-gemi">Emirate</label><select class="sel" id="e-gemi">${opt('', '—')}${EMIRATES.map((x) => opt(x, x, g.emirate === x)).join('')}</select></div>
-      ${fld('City / area', 'e-gcity', g.city)}
+      ${fld('City', 'e-gcity', g.city)}
+      ${fld('Area', 'e-garea', g.area, 'placeholder="e.g. Khalifa City"')}
+      ${fld('Nationality', 'e-gnat', g.nationality)}
+      ${fld('Address', 'e-gaddr', g.address, '', true)}
     </div>
     <div id="e-err" style="margin-top:12px"></div>
     <div class="row-end"><button class="btn ghost" data-act="closeDrawer">Cancel</button><button class="btn" data-act="pEditSave">Save changes</button></div>`);
@@ -1056,6 +1062,7 @@ ACT.pEditSave = async () => {
   set(gp, 'mobile', v('e-gmob'), g.mobile); set(gp, 'email', v('e-gmail'), g.email);
   set(gp, 'secondaryEmail', v('e-gmail2'), g.secondaryEmail, true);
   set(gp, 'emirate', v('e-gemi'), g.emirate, true); set(gp, 'city', v('e-gcity'), g.city, true);
+  set(gp, 'area', v('e-garea'), g.area, true); set(gp, 'nationality', v('e-gnat'), g.nationality, true); set(gp, 'address', v('e-gaddr'), g.address, true);
 
   if (!Object.keys(pp).length && !Object.keys(gp).length) { closeDrawer(); return toast('Nothing changed'); }
   try {
@@ -1220,6 +1227,38 @@ function readManualDiscount(errEl, st) {
  * Cancel a term from the player page (Karim, 13 Oct 2026): its invoice is cancelled with it
  * (credit note if issued), then either register another package or archive the child.
  */
+/** "Trains Tue, Thu" under a purchase; a child coming fewer times than the team trains can pick their days. */
+const DAY_NAME = { MON: 'Mon', TUE: 'Tue', WED: 'Wed', THU: 'Thu', FRI: 'Fri', SAT: 'Sat', SUN: 'Sun' };
+function daysLine(pu, pi, canEdit) {
+  if (!pu.teamDays || !pu.teamDays.length) return '';
+  const live = ['ACTIVE', 'PENDING'].includes(pu.status);
+  const fewer = pu.sessionsPerWeek && pu.sessionsPerWeek < pu.teamDays.length;
+  const warn = live && fewer && !pu.ownDays;
+  return `<div class="mini" style="margin-top:3px">Trains <b>${pu.trainingDays.map((x) => DAY_NAME[x] || x).join(', ')}</b>${pu.ownDays ? ' <span class="mini">(own days)</span>' : ''}
+    ${warn ? ` <span style="color:var(--warn)">· pays for ${pu.sessionsPerWeek}× a week — choose the days</span>` : ''}
+    ${live && canEdit && (fewer || pu.ownDays) ? ` · <a class="lnk2" data-act="pDays" data-a1="${pi}">Training days</a>` : ''}</div>`;
+}
+ACT.pDays = (idx) => {
+  const d = PLAYER, pu = (d.purchases || [])[Number(idx)]; if (!pu) return;
+  const n = pu.sessionsPerWeek || pu.teamDays.length;
+  openDrawer(`Training days — ${d.player.name}`, `
+    <p class="mini" style="margin-top:0">${esc(pu.team || '')} trains <b>${pu.teamDays.map((x) => DAY_NAME[x] || x).join(', ')}</b>.
+      ${esc(d.player.firstName)} pays for <b>${n}× a week</b> — tick the ${n === 1 ? 'day' : `${n} days`} they come. The coach's register shows them only on those days.</p>
+    <div class="frm">${pu.teamDays.map((x) => `<label class="chk"><input type="checkbox" name="pd-day" value="${x}" ${pu.trainingDays.includes(x) && (pu.ownDays || pu.teamDays.length <= n) ? 'checked' : ''}> ${DAY_NAME[x] || x}</label>`).join('')}</div>
+    <div class="mini" style="margin-top:6px">Applies to ${esc(pu.label)} (${esc(pu.termsText)}).${pu.ownDays ? ' Untick all to go back to every team day.' : ''}</div>
+    <div id="pd-err" style="margin-top:8px"></div>
+    <div class="row-end"><button class="btn ghost" data-act="closeDrawer">Cancel</button><button class="btn" id="pd-go" data-act="pDaysGo" data-a1="${idx}">Save days</button></div>`);
+};
+ACT.pDaysGo = async (idx) => {
+  const d = PLAYER, pu = d.purchases[Number(idx)];
+  const days = [...document.querySelectorAll('input[name="pd-day"]:checked')].map((x) => x.value);
+  const ids = pu.terms.filter((t) => ['ACTIVE', 'PENDING'].includes(t.status)).map((t) => t.enrolmentId);
+  $('pd-go').disabled = true;
+  try {
+    const r = await api(`/players/${d.player.id}/terms/days`, { method: 'POST', body: JSON.stringify({ enrolmentIds: ids, days }) });
+    toast(`Training days: ${r.text}`); closeDrawer(); await reloadPlayer();
+  } catch (e) { $('pd-err').innerHTML = `<div class="note bad">${esc(e.message)}</div>`; $('pd-go').disabled = false; }
+};
 ACT.pCancelTerm = async (idx) => {
   const d = PLAYER, pu = (d.purchases || [])[Number(idx)]; if (!pu) return;
   let inv = null;
@@ -1584,7 +1623,7 @@ async function loadGuardians() {
         <td class="em">${g.secondaryEmail ? `${esc(g.secondaryEmail)}${g.secondaryEmailName ? `<div class="mini">${esc(g.secondaryEmailName)}</div>` : ''}` : '<span class="mini">—</span>'}</td>
         <td class="mono">${esc(fmtPhone(g.mobile))}</td>
         <td>${g.children.map((c) => `<div><a class="lnk2" data-act="openPlayer" data-a1="${c.id}">${esc(c.reference)}</a> ${esc(c.name)} ${c.category ? `<span class="chip">${esc(c.category)}</span>` : ''}${c.archived ? ' <span class="pill p-mute">archived</span>' : ''}</div>`).join('') || '<span class="mini">no children</span>'}</td>
-        <td>${esc([...new Set([g.city, g.emirate].filter(Boolean))].join(', ') || '—')}</td>
+        <td>${esc([...new Set([g.area, g.city, g.emirate].filter(Boolean))].join(', ') || '—')}</td>
         ${can('wallet.view') ? `<td class="num"><a class="lnk2" data-act="showWallet" data-a1="${g.id}" data-a2="${esc(g.fullName)}">${money(g.wallet)}</a></td>` : ''}
         <td>${portal(g)}</td>
         <td>${can('guardian.edit') ? `<button class="btn sm ghost" data-act="gEdit" data-a1="${g.id}">Edit</button>` : ''}</td></tr>`).join('')}</tbody></table>
@@ -1605,7 +1644,10 @@ ACT.gEdit = async (id) => {
       <div><label class="lbl" for="ge-rel">Relationship</label><select class="sel" id="ge-rel">${RELATIONS.map((r) => opt(r, r, (g.relationship || 'Father') === r)).join('')}</select></div>
       ${fld('Email *', 'ge-email', g.email, 'type="email"')}${fld('Mobile *', 'ge-mob', g.mobile, 'type="tel"')}
       <div><label class="lbl" for="ge-emi">Emirate</label><select class="sel" id="ge-emi">${opt('', '—')}${EMIRATE_LIST.map((x) => opt(x, x, g.emirate === x)).join('')}</select></div>
-      ${fld('City / area', 'ge-city', g.city || '')}
+      ${fld('City', 'ge-city', g.city || '')}
+      ${fld('Area', 'ge-area', g.area || '', 'placeholder="e.g. Khalifa City"')}
+      ${fld('Nationality', 'ge-nat', g.nationality || '')}
+      ${fld('Address', 'ge-addr', g.address || '', '', true)}
     </div>
     <div class="sec"><h3>Additional email <span class="cnt">another family member</span></h3>
       <div class="frm">${fld('Email', 'ge-x', g.secondaryEmail || '', 'type="email" placeholder="e.g. the other parent"')}${fld('Whose is it?', 'ge-xn', g.secondaryEmailName || '', 'placeholder="e.g. Mother — Rana"')}
@@ -1618,6 +1660,7 @@ ACT.gEdit = async (id) => {
 ACT.gSave = async (id) => {
   const body = { fullName: $('ge-name').value.trim(), relationship: $('ge-rel').value, email: $('ge-email').value.trim(), mobile: $('ge-mob').value.trim(),
     emirate: $('ge-emi').value || undefined, city: $('ge-city').value.trim() || undefined,
+    area: $('ge-area').value.trim() || null, nationality: $('ge-nat').value.trim() || null, address: $('ge-addr').value.trim() || null,
     secondaryEmail: $('ge-x').value.trim() || null, secondaryEmailName: $('ge-xn').value.trim() || null };
   if (!body.fullName || !body.email || !body.mobile) { $('ge-err').innerHTML = '<div class="note bad">Name, email and mobile are needed.</div>'; return; }
   try { await api('/guardians/' + id, { method: 'PATCH', body: JSON.stringify(body) }); closeDrawer(); toast('Parent saved');
@@ -2241,7 +2284,7 @@ function newReg(keepGuardian) {
     step: keepGuardian ? 2 : 1,
     gMode: 'find', hits: [], query: '',
     guardian: keepGuardian ? prev.guardian : null,
-    newGuardian: { fullName: '', relationship: 'Father', email: '', mobile: '', emirate: 'Abu Dhabi', city: '' },
+    newGuardian: { fullName: '', relationship: 'Father', email: '', mobile: '', emirate: 'Abu Dhabi', city: '', area: '', nationality: '' },
     child: { firstName: '', lastName: keepGuardian ? prev.child.lastName : '', dateOfBirth: '', gender: '',
       kitSize: '', previousAcademy: '', medicalNotes: '', emergencyContactName: '', emergencyContactPhone: '' },
     placement: null, manualAgeGroupId: '',
@@ -2335,10 +2378,12 @@ function regNewParentForm() {
     ${fld('Mobile *', 'ng-mob', g.mobile, 'type="tel" placeholder="050 123 4567"')}
     ${fld('Email *', 'ng-mail', g.email, 'type="email"', true)}
     <div><label class="lbl" for="ng-emi">Emirate</label><select class="sel" id="ng-emi">${EMIRATES.map((x) => opt(x, x, g.emirate === x)).join('')}</select></div>
-    ${fld('City / area', 'ng-city', g.city)}</div></div>`;
+    ${fld('City', 'ng-city', g.city)}
+    ${fld('Area', 'ng-area', g.area, 'placeholder="e.g. Khalifa City"')}
+    ${fld('Nationality', 'ng-nat', g.nationality)}</div></div>`;
 }
 function wireNewParentForm() {
-  const map = { 'ng-name': 'fullName', 'ng-rel': 'relationship', 'ng-mob': 'mobile', 'ng-mail': 'email', 'ng-emi': 'emirate', 'ng-city': 'city' };
+  const map = { 'ng-name': 'fullName', 'ng-rel': 'relationship', 'ng-mob': 'mobile', 'ng-mail': 'email', 'ng-emi': 'emirate', 'ng-city': 'city', 'ng-area': 'area', 'ng-nat': 'nationality' };
   for (const [id, k] of Object.entries(map)) $(id).addEventListener('input', (e) => { REG.newGuardian[k] = e.target.value; renderRegSummary(); });
 }
 
@@ -2647,7 +2692,7 @@ ACT.regConfirm = async () => {
       const g = REG.newGuardian;
       const created = await api('/guardians', { method: 'POST', body: JSON.stringify({
         fullName: g.fullName, relationship: g.relationship, email: g.email, mobile: g.mobile,
-        emirate: g.emirate || undefined, city: g.city || undefined }) });
+        emirate: g.emirate || undefined, city: g.city || undefined, area: g.area || undefined, nationality: g.nationality || undefined }) });
       REG.guardian = { id: created.id, reference: created.reference, fullName: created.fullName, email: created.email, mobile: created.mobile, children: 0 };
     }
     if (!REG.playerId) {
@@ -2696,7 +2741,7 @@ async function regConfirmFamily(manual) {
     if (!REG.guardian) {
       const g = REG.newGuardian;
       const created = await api('/guardians', { method: 'POST', body: JSON.stringify({
-        fullName: g.fullName, relationship: g.relationship, email: g.email, mobile: g.mobile, emirate: g.emirate || undefined, city: g.city || undefined }) });
+        fullName: g.fullName, relationship: g.relationship, email: g.email, mobile: g.mobile, emirate: g.emirate || undefined, city: g.city || undefined, area: g.area || undefined, nationality: g.nationality || undefined }) });
       REG.guardian = { id: created.id, reference: created.reference, fullName: created.fullName, email: created.email, mobile: created.mobile, children: 0 };
     }
     // Every child first (one welcome email, sent with the last), then the invoice.
@@ -4435,7 +4480,7 @@ ACT.stkNewGo = async () => {
 };
 
 // ================= email log =================
-const KIND_WORD = { welcome: 'Welcome + sign-in', registered: 'Child registered', invoice: 'Invoice', reminder: 'Payment reminder', payment_link: 'Payment link', report: 'Term report' };
+const KIND_WORD = { welcome: 'Welcome + sign-in', registered: 'Child registered', invoice: 'Invoice', reminder: 'Payment reminder', payment_link: 'Payment link', report: 'Term report', password_reset: 'Password reset (link hidden)' };
 VIEWS.emails = async () => {
   $('page-title').textContent = 'Email log';
   const [st, rows] = await Promise.all([api('/email/status'), api('/email/log?limit=300')]);

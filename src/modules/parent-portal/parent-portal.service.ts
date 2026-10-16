@@ -5,11 +5,16 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { In, IsNull, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
+import { createHash, randomBytes } from 'crypto';
+import { NotificationsService } from '../notifications/notifications.service';
 import { Enrolment, EnrolmentStatus, Guardian, Invoice, InvoiceLineItem, InvoiceStatus, Player } from '../../database/entities';
 
 const TOKEN_TTL = 2 * 60 * 60;        // 2 hours
 const MAX_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
+const RESET_MINUTES = 60;
+const RESET_GAP_MS = 2 * 60000;
+const sha256 = (t: string) => createHash('sha256').update(t).digest('hex');
 
 export interface ParentPrincipal { id: string; mustChangePassword: boolean }
 
@@ -26,6 +31,7 @@ export class ParentPortalService {
     @InjectRepository(Enrolment) private readonly enrolments: Repository<Enrolment>,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   secret() { return `${this.config.get<string>('jwt.accessSecret')}::parent-portal`; }
@@ -62,6 +68,43 @@ export class ParentPortalService {
     this.attempts.delete(key);
     await this.guardians.update(g.id, { lastLoginAt: new Date() });
     return { accessToken: await this.token(g), expiresIn: TOKEN_TTL, mustChangePassword: g.mustChangePassword, name: g.fullName };
+  }
+
+  /**
+   * "Forgot password". Always answers the same way, so the page never tells whether an
+   * email has an account. A link (one-time code, 60 minutes) goes to that email
+   * only; asking again within 2 minutes sends nothing new.
+   */
+  async requestReset(email: string) {
+    const key = email.trim().toLowerCase();
+    const g = await this.guardians.createQueryBuilder('g')
+      .where('LOWER(g.email) = :e', { e: key }).andWhere('g.isActive = true').getOne();
+    if (g && !(g.resetRequestedAt && Date.now() - new Date(g.resetRequestedAt).getTime() < RESET_GAP_MS)) {
+      const token = randomBytes(32).toString('base64url');
+      await this.guardians.update(g.id, {
+        resetTokenHash: sha256(token), resetTokenExpiresAt: new Date(Date.now() + RESET_MINUTES * 60000), resetRequestedAt: new Date(),
+      });
+      await this.notifications.sendPasswordReset(g.id, token, RESET_MINUTES);
+    }
+    return { ok: true, message: 'If this email has a parent account, we have sent it a link to choose a new password.' };
+  }
+
+  /** Set the new password from the emailed link. The link then stops working. */
+  async resetPassword(token: string, next: string) {
+    const weak = ParentPortalService.checkStrength(next);
+    if (weak) throw new BadRequestException(weak);
+    const g = await this.guardians.createQueryBuilder('g').addSelect('g.resetTokenHash')
+      .where('g.resetTokenHash = :h', { h: sha256(token) }).andWhere('g.isActive = true').getOne();
+    if (!g || !g.resetTokenExpiresAt || new Date(g.resetTokenExpiresAt) < new Date()) {
+      throw new BadRequestException('This link has expired or was already used. Ask for a new one from the sign-in page.');
+    }
+    // Single use: the code is cleared in the same update that only succeeds while it is still there.
+    const res = await this.guardians.createQueryBuilder().update(Guardian)
+      .set({ passwordHash: await bcrypt.hash(next, 10), mustChangePassword: false, tempPasswordExpiresAt: null, resetTokenHash: null, resetTokenExpiresAt: null })
+      .where('id = :id AND "resetTokenHash" = :h', { id: g.id, h: sha256(token) }).execute();
+    if (!res.affected) throw new BadRequestException('This link has expired or was already used. Ask for a new one from the sign-in page.');
+    this.attempts.delete(g.email.trim().toLowerCase());
+    return { ok: true, email: g.email };
   }
 
   static checkStrength(pw: string) {

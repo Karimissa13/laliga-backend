@@ -2,7 +2,7 @@ import {
   Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, OneToOne,
   PrimaryGeneratedColumn, UpdateDateColumn,
 } from 'typeorm';
-import { EnrolmentStatus, LeadSource, LeadStatus } from './enums';
+import { EnrolmentStatus, LeadSource, LeadStatus, Weekday } from './enums';
 import { Player } from './people.entities';
 import { Season, Term, Team } from './structure.entities';
 import { Invoice } from './finance.entities';
@@ -10,6 +10,8 @@ import { Invoice } from './finance.entities';
 @Entity('leads')
 export class Lead {
   @PrimaryGeneratedColumn('uuid') id: string;
+  /** Id of this record in the old admin (set by the import; empty for records made here). */
+  @Index() @Column({ type: 'varchar', length: 40, nullable: true }) legacyId?: string | null;
   @Index({ unique: true }) @Column() reference: string; // TR-000001
   @Column() guardianName: string;
   /** Optional on the website's trial form. */
@@ -103,6 +105,8 @@ export class LeadEvaluation {
 @Entity('enrolments')
 export class Enrolment {
   @PrimaryGeneratedColumn('uuid') id: string;
+  /** Id of this record in the old admin (set by the import; empty for records made here). */
+  @Index() @Column({ type: 'varchar', length: 40, nullable: true }) legacyId?: string | null;
   @Index() @Column() playerId: string;
   @ManyToOne(() => Player)
   @JoinColumn({ name: 'playerId' })
@@ -128,6 +132,11 @@ export class Enrolment {
    * Null on older enrolments; pricing then falls back to the team's training days.
    */
   @Column({ type: 'int', nullable: true }) sessionsPerWeek?: number | null;
+  /**
+   * The team's days this child attends, when they come fewer times a week than the team trains
+   * (e.g. 2× a week on a Tue/Wed/Thu team). Null = every training day of the team.
+   */
+  @Column({ type: 'enum', enum: Weekday, array: true, nullable: true }) trainingDays?: Weekday[] | null;
   /** Which term option was bought (T1 … FULL); every enrolment of one purchase shares it. */
   @Column({ type: 'varchar', length: 8, nullable: true }) package?: string | null;
   /**

@@ -13,6 +13,9 @@ export class CreateGuardianDto {
   @ApiProperty({ example: '+9715XXXXXXXX' }) @IsString() mobile: string;
   @ApiPropertyOptional() @IsOptional() @IsString() emirate?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() city?: string;
+  @ApiPropertyOptional() @IsOptional() @ValidateIf((o) => o.nationality !== null) @IsString() @MaxLength(60) nationality?: string | null;
+  @ApiPropertyOptional() @IsOptional() @ValidateIf((o) => o.address !== null) @IsString() @MaxLength(300) address?: string | null;
+  @ApiPropertyOptional({ example: 'Khalifa City' }) @IsOptional() @ValidateIf((o) => o.area !== null) @IsString() @MaxLength(80) area?: string | null;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() marketingConsent?: boolean;
   @ApiPropertyOptional({ description: 'Optional parent-portal password' })
   @IsOptional() @IsString() @MinLength(8) password?: string;
@@ -28,6 +31,9 @@ export class UpdateGuardianDto {
   @ApiPropertyOptional() @IsOptional() @IsString() mobile?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() emirate?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() city?: string;
+  @ApiPropertyOptional() @IsOptional() @ValidateIf((o) => o.nationality !== null) @IsString() @MaxLength(60) nationality?: string | null;
+  @ApiPropertyOptional() @IsOptional() @ValidateIf((o) => o.address !== null) @IsString() @MaxLength(300) address?: string | null;
+  @ApiPropertyOptional({ example: 'Khalifa City' }) @IsOptional() @ValidateIf((o) => o.area !== null) @IsString() @MaxLength(80) area?: string | null;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() marketingConsent?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsString() @MinLength(8) password?: string;
 }
