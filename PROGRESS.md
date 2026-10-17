@@ -517,3 +517,39 @@ Next for the move:
   - Refused: a second one for the same family, duplicate or negative lines, and an old invoice paid more than its total (that is wallet credit — it goes to the wallet instead).
   - Pure rule `finance/opening-balance.ts`; `writeOpeningBalance` (in the importer's transaction) in `opening-balance.service.ts`.
 - [x] **Tests:** 135 unit + 174 e2e.
+
+## ✅ Completed — New parent portal and account switch — 17 Oct 2026
+
+Old parent area reviewed (Players → Account switch, view only, 2 families). Its problems:
+- The dashboard shows only contact details.
+- Parents change their own term, location and days with no price shown.
+- Invoices are listed twice, with no paid / balance figures and public PDF links.
+- Instalments are on a separate page.
+- The wallet is one line with no history.
+- On a phone the menu fills the screen.
+- Account switch gives staff full rights, with no reason asked and nothing logged.
+
+Karim's choices (17 Oct):
+- Parents can **view only** (no booking changes).
+- **Pay is hidden** until the gateway is connected.
+- Staff **act as the parent**.
+- The first version includes **document uploads, Arabic and notifications on Home**.
+- Documents are stored privately **in the database**.
+
+- [x] **Parent portal** (`/parent/`), in the LaLiga look (white, LaLiga red, logo). Four tabs, at the bottom on a phone and at the top on a computer:
+  - **Home:** still to pay, with the next due (instalment x of y, invoice, date, overdue in red); a card per child (team, category, package, payment state, next training from the sessions, respecting the child's own days); updates (overdue or due within 14 days, report ready, emails sent).
+  - **Children:** date of birth, category, team, coach, place, schedule and own days, package, next training, term reports (PDF), documents (photo, Emirates ID front and back, medical insurance: upload, view, replace).
+  - **Payments:** still to pay and wallet credit; each invoice once, with what it is for, the children, and its instalments inside it; PDF download through the sign-in, never a public link; wallet history in plain words (staff notes never shown).
+  - **Profile:** name, mobile, additional email and whose it is, nationality, area, address; the sign-in email is changed by the academy; change password.
+  - **English / العربية**, right-to-left. The Arabic wording is to be checked by a native speaker before parents are told about the portal.
+- [x] **Documents:**
+  - Images are shrunk in the browser (longest side 1600 px, about 250 KB); a PDF can be up to 1.5 MB.
+  - Stored in `documents.content` (migration `ParentDocuments`), private, `Cache-Control: no-store`.
+  - Only for the parent's own children; the newest of each type is shown.
+  - Staff open them from the player page (Development card → Documents).
+- [x] **Account switch** (player page → Account switch):
+  - A reason is required and written to the audit log (`guardian.act_as`).
+  - It opens the parent's portal in a new tab, acting as the parent, for 30 minutes, under a banner "Staff view: … is acting as … — Close this view".
+  - Staff can change profile details and documents, which are recorded as uploaded by them, but **not the password** (use "Send sign-in details").
+  - It replaces the old read-only drawer.
+- [x] **Tests:** 135 unit + 178 e2e — home, profile (email can't be changed), documents (types, own child only, private, staff access), account switch (reason, banner data, no password change, audit entry).

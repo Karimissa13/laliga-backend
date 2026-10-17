@@ -55,6 +55,8 @@ export class Document {
   @Column() storageKey: string;
   @Column({ nullable: true }) mimeType?: string;
   @Column({ type: 'int', nullable: true }) sizeBytes?: number;
+  /** The file itself (parent uploads, Oct 2026): kept in the database, private; images are shrunk to ~200 KB before upload. */
+  @Column({ type: 'bytea', nullable: true, select: false }) content?: Buffer | null;
   @Column({ type: 'timestamptz', nullable: true }) expiresAt?: Date;
   @Index() @Column({ nullable: true }) playerId?: string;
   @ManyToOne(() => Player, { nullable: true }) @JoinColumn({ name: 'playerId' }) player?: Player;

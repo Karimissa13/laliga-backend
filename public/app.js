@@ -984,6 +984,7 @@ function renderPlayer() {
           ${(PLAYER.reports || []).length ? `<div class="mini" style="margin:6px 0 4px;font-weight:700;color:var(--ink)">Term reports</div>${PLAYER.reports.map((r) => `<div class="kidrow"><div><a class="lnk2" data-act="rpOpen" data-a1="${r.id}">${esc(r.term || '')} · ${esc(RTYPE_WORD[r.reportType])}</a>
               <div class="mini">${[r.coach ? esc(r.coach) : '', r.overall != null ? `overall ${r.overall.toFixed(1)}` : ''].filter(Boolean).join(' · ')}</div></div>${rstatePill(r.sentAt ? 'SENT' : r.status)}</div>`).join('')}`
             : dv && Object.keys(dv.averages || {}).length ? Object.entries(dv.averages).map(([k, v]) => `<div class="score"><span class="lb">${esc(k)}</span><span class="sb"><i style="width:${v / 5 * 100}%"></i></span><span class="sv">${v}</span></div>`).join('') : '<div class="mini">No term reports yet — coaches write them in Player development.</div>'}
+          ${docs?.held?.length ? `<div class="mini" style="margin-top:10px">Documents: ${docs.held.map((x) => x.file ? `<a class="lnk2" data-act="pDocOpen" data-a1="${x.id}">${esc(humanDoc(x.type))}</a>` : esc(humanDoc(x.type))).join(', ')}</div>` : ''}
           ${docs?.missing?.length ? `<div class="mini" style="color:var(--warn);margin-top:10px">Missing documents: ${docs.missing.map((x) => esc(humanDoc(x))).join(', ')}</div>` : ''}
         </div>
       </div>
@@ -1469,14 +1470,14 @@ ACT.pItemsGo = async () => {
 // ---- wallet ----
 ACT.pWallet = () => window.showWallet(PLAYER.guardian.id, PLAYER.guardian.fullName);
 
-// ---- account switch (read-only parent view) ----
+// ---- account switch: open the parent's portal acting as the parent (Karim, 17 Oct 2026) ----
 ACT.pAccount = () => {
   const g = PLAYER.guardian;
   openDrawer('Account switch', `
-    <div class="note info">See exactly what ${esc(g.fullName)} sees in their account. This view is read-only, and opening it is recorded in the activity log with your reason.</div>
+    <div class="note info">Opens <b>${esc(g.fullName)}</b>'s parent account in a new tab, exactly as they see it, and lets you act as them (profile details, documents). It lasts 30 minutes. Their password can't be changed this way — use "Send sign-in details" for that. Opening it is recorded in the activity log with your reason.</div>
     <div style="margin-top:14px"><label class="lbl" for="av-reason">Reason</label><input class="in" id="av-reason" placeholder="e.g. Parent called about the Term 2 invoice"></div>
     <div id="av-err" style="margin-top:10px"></div>
-    <div class="row-end"><button class="btn ghost" data-act="closeDrawer">Cancel</button><button class="btn" data-act="pAccountGo">Open parent view</button></div>`);
+    <div class="row-end"><button class="btn ghost" data-act="closeDrawer">Cancel</button><button class="btn" data-act="pAccountGo">Open parent account</button></div>`);
   $('av-reason').addEventListener('keydown', (e) => { if (e.key === 'Enter') ACT.pAccountGo(); });
   $('av-reason').focus();
 };
@@ -1484,24 +1485,16 @@ ACT.pAccount = () => {
 ACT.pAccountGo = async () => {
   const reason = $('av-reason').value.trim();
   if (reason.length < 5) { $('av-err').innerHTML = '<div class="note bad">Give a reason (at least 5 characters) — it goes in the activity log.</div>'; return; }
+  // Open the tab now (a tab opened after waiting for the server is blocked as a pop-up), then point it at the portal.
+  const tab = window.open('about:blank', '_blank');
   try {
-    const v = await api(`/guardians/${PLAYER.guardian.id}/account-view`, { method: 'POST', body: JSON.stringify({ reason }) });
-    openDrawer(`Viewing as ${v.viewingAs.name}`, `
-      <div class="note warn">Read-only — this is the parent's view of their account (${esc(v.viewingAs.reference)}). Recorded in the activity log.</div>
-      <div class="grid g2" style="margin-top:14px">
-        <div class="card kpi"><div class="l">To pay</div><div class="n ${v.outstanding > 0 ? 'bad' : 'good'}">${money(v.outstanding)}</div></div>
-        <div class="card kpi"><div class="l">Wallet credit</div><div class="n">${money(v.walletBalance)}</div></div>
-      </div>
-      <h3 style="font-size:13px;margin:18px 0 8px">Children</h3>
-      ${v.children.map((c) => `<div class="card" style="padding:12px 14px;margin-bottom:8px"><b>${esc(c.name)}</b> <span class="chip">${esc(c.category || '—')}</span>
-        <div class="mini">${c.team ? esc(c.team.name) + ' · ' + esc(c.team.schedule) + (c.team.coach ? ' · Coach ' + esc(c.team.coach.name) : '') : 'Not placed on a team yet'}</div></div>`).join('') || '<div class="mini">No children.</div>'}
-      <h3 style="font-size:13px;margin:18px 0 8px">Invoices</h3>
-      ${v.invoices.length ? `<div class="card tblwrap"><table><thead><tr><th>Invoice</th><th>Due</th><th class="num">Total</th><th class="num">Balance</th><th>Status</th></tr></thead>
-        <tbody>${v.invoices.map((i) => `<tr><td class="ref">${esc(i.number)}</td><td>${dt(i.dueDate)}</td><td class="num">${money(i.total)}</td><td class="num">${money(i.balance)}</td><td class="mini">${esc(i.status)}</td></tr>`).join('')}</tbody></table></div>`
-        : '<div class="mini">No invoices.</div>'}
-      <div class="row-end"><button class="btn" data-act="closeDrawer">Close parent view</button></div>`);
-  } catch (e) { $('av-err').innerHTML = `<div class="note bad">${esc(e.message)}</div>`; }
+    const r = await api(`/parent/act-as/${PLAYER.guardian.id}`, { method: 'POST', body: JSON.stringify({ reason }) });
+    const url = `/parent/#act=${r.token}`;
+    if (tab) tab.location.href = url; else window.open(url, '_blank');
+    closeDrawer(); toast(`Opened ${r.parent.name}'s account in a new tab (30 minutes)`);
+  } catch (e) { if (tab) tab.close(); $('av-err').innerHTML = `<div class="note bad">${esc(e.message)}</div>`; }
 };
+ACT.pDocOpen = async (id) => { try { await fetchFile(`/parent/staff/documents/${id}`, 'document', true); } catch (e) { toast(e.message); } };
 
 // ---- delete user (archive first; permanent only for mistakes) ----
 ACT.pDelete = () => {

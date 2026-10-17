@@ -129,7 +129,7 @@ export class DevelopmentService {
         status: e.status, enrolledAt: e.enrolledAt, endedAt: e.endedAt,
       })),
       documents: {
-        held: docs.map((d) => ({ id: d.id, type: d.type, fileName: d.fileName, expiresAt: d.expiresAt })),
+        held: docs.map((d) => ({ id: d.id, type: d.type, fileName: d.fileName, expiresAt: d.expiresAt, at: d.createdAt, file: String(d.storageKey || '').startsWith('db:') })),
         missing: requiredDocs.filter((t) => !held.has(t)),
         expired: docs.filter((d) => d.expiresAt && new Date(d.expiresAt) < now).map((d) => d.type),
         complete: requiredDocs.every((t) => held.has(t)),

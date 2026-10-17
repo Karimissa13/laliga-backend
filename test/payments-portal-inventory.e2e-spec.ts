@@ -223,6 +223,68 @@ describe('Payment report, invoice email, parent portal, inventory (e2e)', () => 
     });
   });
 
+  describe('parent portal: home, profile, documents, account switch (Karim, 17 Oct 2026)', () => {
+    let pt: string;
+    const P = () => ({ Authorization: `Bearer ${pt}` });
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+    it('home: what is owed, each child, invoices with what they are for — no staff notes', async () => {
+      pt = (await request(http).post('/api/v1/parent/auth/login').send({ email: g.email, password: 'NewGoal2027' }).expect(201)).body.accessToken;
+      const h = (await request(http).get('/api/v1/parent/home').set(P()).expect(200)).body;
+      expect(h.parent).toMatchObject({ reference: g.reference, email: g.email });
+      expect(h.actingAs).toBeNull();
+      expect(h.children.map((c: any) => c.reference)).toEqual([child.reference]);
+      expect(String(h.children[0].schedule)).not.toMatch(/undefined|, ,/);
+      expect(h.children[0].documents.map((d: any) => d.type)).toEqual(['PHOTO', 'EMIRATES_ID_FRONT', 'EMIRATES_ID_BACK', 'MEDICAL_INSURANCE']);
+      const inv = h.invoices.find((i: any) => i.number === invoice.number);
+      expect(inv).toMatchObject({ balance: 3100, state: expect.stringMatching(/DUE|OVERDUE|PART_PAID/) });
+      expect(h.owed.total).toBeGreaterThanOrEqual(3100);
+      expect(h.owed.next).toMatchObject({ invoiceNumber: expect.any(String) });
+      expect(JSON.stringify(h)).not.toMatch(/passwordHash|resetTokenHash/);
+    });
+
+    it('profile: the parent changes their details but not their sign-in email', async () => {
+      await request(http).patch('/api/v1/parent/profile').set(P()).send({ nationality: 'Spanish', area: 'Al Reem', address: 'Tower 3' }).expect(200);
+      await request(http).patch('/api/v1/parent/profile').set(P()).send({ email: 'hijack@example.com' }).expect(400);    // not allowed
+      await request(http).patch('/api/v1/parent/profile').set(P()).send({ secondaryEmail: g.email }).expect(400);
+      const h = (await request(http).get('/api/v1/parent/home').set(P()).expect(200)).body;
+      expect(h.parent).toMatchObject({ nationality: 'Spanish', area: 'Al Reem', address: 'Tower 3', email: g.email });
+    });
+
+    it('documents: upload for their own child only, newest shown, private to the family and staff', async () => {
+      await request(http).post('/api/v1/parent/documents').set(P()).send({ playerId: child.id, type: 'PHOTO', fileName: 'x.pdf', dataUrl: 'data:application/pdf;base64,JVBERi0=' }).expect(400);
+      await request(http).post('/api/v1/parent/documents').set(P()).send({ playerId: child.id, type: 'PASSPORT', fileName: 'p.png', dataUrl: png }).expect(400);
+      const other = (await request(http).get('/api/v1/players?limit=5').set(auth())).body.data.find((p: any) => p.id !== child.id);
+      await request(http).post('/api/v1/parent/documents').set(P()).send({ playerId: other.id, type: 'PHOTO', fileName: 'p.png', dataUrl: png }).expect(404);
+      const d = (await request(http).post('/api/v1/parent/documents').set(P()).send({ playerId: child.id, type: 'PHOTO', fileName: 'omar.png', dataUrl: png }).expect(201)).body;
+      const file = await request(http).get(`/api/v1/parent/documents/${d.id}`).set(P()).expect(200);
+      expect(file.headers['content-type']).toMatch(/image\/png/);
+      expect(file.headers['cache-control']).toMatch(/no-store/);
+      const h = (await request(http).get('/api/v1/parent/home').set(P()).expect(200)).body;
+      expect(h.children[0].documents.find((x: any) => x.type === 'PHOTO').id).toBe(d.id);
+      // staff can open it; without signing in nobody can
+      await request(http).get(`/api/v1/parent/staff/documents/${d.id}`).set(auth()).expect(200);
+      expect([401, 403]).toContain((await request(http).get(`/api/v1/parent/documents/${d.id}`)).status);
+      await request(http).get(`/api/v1/parent/staff/documents/${d.id}`).expect(401);
+    });
+
+    it('account switch: staff act as the parent with a reason; banner data; no password change; logged', async () => {
+      await request(http).post(`/api/v1/parent/act-as/${g.id}`).set(auth()).send({ reason: 'x' }).expect(400);
+      const r = (await request(http).post(`/api/v1/parent/act-as/${g.id}`).set(auth()).send({ reason: 'Parent called about the invoice' }).expect(200)).body;
+      expect(r).toMatchObject({ expiresIn: 1800, parent: { reference: g.reference } });
+      const A = { Authorization: `Bearer ${r.token}` };
+      const h = (await request(http).get('/api/v1/parent/home').set(A).expect(200)).body;
+      expect(h.actingAs).toMatchObject({ name: expect.any(String) });
+      await request(http).patch('/api/v1/parent/profile').set(A).send({ area: 'Khalifa City' }).expect(200);
+      await request(http).post('/api/v1/parent/auth/change-password').set(A).send({ currentPassword: 'NewGoal2027', newPassword: 'Staff2027x' }).expect(403);
+      // a parent token never opens staff routes, and a parent can't use act-as
+      await request(http).post(`/api/v1/parent/act-as/${g.id}`).set(P()).send({ reason: 'Trying it myself' }).expect(401);
+      const audit = (await request(http).get(`/api/v1/audit-logs?action=guardian.act_as&limit=5`).set(auth()).expect(200)).body;
+      const rows = audit.data ?? audit;
+      expect(rows.some((x: any) => x.entityId === g.id)).toBe(true);
+    });
+  });
+
   describe('inventory', () => {
     it('clears the store only on a typed confirmation, leaving one practice item', async () => {
       await request(http).post('/api/v1/inventory/reset').set(auth()).send({ confirm: 'yes' }).expect(400);

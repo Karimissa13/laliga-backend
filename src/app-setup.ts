@@ -41,6 +41,8 @@ export function configureApp(app: INestApplication, env: NodeJS.ProcessEnv = pro
   }));
   // Only the academy's own sites may call the API from a browser (see corsOrigin).
   app.enableCors({ origin: corsOrigin(env), credentials: true });
+  // Parents' document uploads (a PDF up to 1.5 MB, sent as base64): this route only.
+  app.use('/api/v1/parent/documents', json({ limit: '2200kb' }));
   // Room for a player's photo on the Advanced report (resized in the browser first).
   app.use(json({ limit: '1mb' }));
   app.use(urlencoded({ extended: true, limit: '1mb' }));
